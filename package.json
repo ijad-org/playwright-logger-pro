@@ -1,5 +1,5 @@
 {
-  "name": "playwright-api-logger",
+  "name": "playwright-colorful-logger",
   "version": "0.1.0",
   "description": "Colorful request/response logging for Playwright's APIRequestContext, with optional copy-pastable curl output",
   "author": "Shahul Hameed M Y (https://linkedin.com/in/shahulhameedmy)",
