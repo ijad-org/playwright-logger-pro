@@ -1,0 +1,64 @@
+{
+  "name": "playwright-api-logger",
+  "version": "0.1.0",
+  "description": "Colorful request/response logging for Playwright's APIRequestContext, with optional copy-pastable curl output",
+  "author": "Shahul Hameed M Y (https://linkedin.com/in/shahulhameedmy)",
+  "license": "MIT",
+  "packageManager": "pnpm@11.15.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijad-org/playwright-api-logger.git"
+  },
+  "homepage": "https://github.com/ijad-org/playwright-api-logger#readme",
+  "bugs": {
+    "url": "https://github.com/ijad-org/playwright-api-logger/issues"
+  },
+  "keywords": [
+    "playwright",
+    "api-testing",
+    "logger",
+    "logging",
+    "curl",
+    "APIRequestContext",
+    "playwright-test"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./fixtures": {
+      "types": "./dist/fixtures.d.ts",
+      "import": "./dist/fixtures.mjs",
+      "require": "./dist/fixtures.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "tsx --test test/curl.test.ts test/format.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.30.0"
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
