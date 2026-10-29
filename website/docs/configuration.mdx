@@ -30,6 +30,7 @@ The option tables on this page are compared with the library's option types and 
 - **`undefined` means the default.** An option explicitly set to `undefined` uses its default, which lets you write `colors: process.env.CI ? true : undefined`.
 - **Explicit `colors` wins** over every colour environment variable.
 - **Invalid values never throw.** An unknown option or invalid value prints a one-time `[playwright-logger-pro]` warning naming the option, and the default is used. (`maxEvents` must be a positive integer so a bad value can never switch the failure block off.)
+- **`httpCredentials` arrays.** Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`.
 - **apiLog redaction lists are merged** with the built-in lists; see [`replaceDefaultRedaction`](#apilog-options).
 
 ## apiLog options {#apilog-options}
@@ -92,7 +93,7 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | --- | --- | --- | --- |
 | `mask` | `string` | `'***'` | Replacement for masked values. |
 | `fillValues` | `'auto' \| 'always' \| 'never'` | `'auto'` | Masking of typed values. `'auto'`: when the target looks sensitive. `'always'`: every typed value. `'never'`: none (`values` still applies). |
-| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description; strings are case-insensitive substrings. **Replaces** the default list; spread the default to extend it. |
+| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description; strings are case-insensitive substrings. **Replaces** the default list; spread the default to extend it. Text is also matched after splitting on camelCase, `_` and `-`, for your own entries too. |
 | `values` | `string[]` | `[]` | Literal secrets masked everywhere, in addition to the ones collected automatically. Values shorter than 4 characters are ignored. |
 | `keys` | `(string \| RegExp)[]` | the sensitive key patterns | Object keys masked inside arguments. **Replaces** the default patterns. |
 | `headers` | `string[]` | apiLog's resolved list: `authorization`, `cookie`, `set-cookie`, `x-api-key` plus your `apiLog.redactHeaders` | Extra header names, added to apiLog's `redactHeaders` (defaults included). |

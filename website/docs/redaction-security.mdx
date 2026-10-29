@@ -50,7 +50,7 @@ What is masked in the browser log:
 
 | What | How |
 | --- | --- |
-| Values typed with `fill()`, `type()`, `pressSequentially()`, `keyboard.type()`/`press()` and dialog prompt answers | Masked when the **target looks sensitive**: its selector, label or placeholder matches `redact.selectors` (`password`, `passcode`, `secret`, `token`, `otp`, `pin`, `cvv`, `api key`, `type=password`, `autocomplete=current-password`, card number fields, `#totp`, ...). `keyboard` input is masked while the last targeted field was sensitive; a navigation resets that. |
+| Values typed with `fill()`, `type()`, `pressSequentially()`, `keyboard.type()`/`press()` and dialog prompt answers | Masked when the **target looks sensitive**: its selector, label or placeholder matches `redact.selectors` (`password`, `passcode`, `secret`, `token`, `otp`, `pin`, `cvv`, `api key`, `type=password`, `autocomplete=current-password`, card number fields, `#totp`, ...). See [Sensitive field detection](#field-detection) for card, expiry and PAN fields. `keyboard` input is masked while the last targeted field was sensitive; a navigation resets that. |
 | Typed values that were masked | **Learned for the rest of the test.** Whatever the page echoes of such a value (console messages, page errors, network and navigation URLs including query strings, dialog text, notes, apiLog lines) is masked too, in the spellings listed under [Which spellings are masked](#spellings). Values shorter than 4 characters are never learned. The newest 256 typed secrets are remembered. |
 | Literal secrets in `redact.values` | Masked everywhere: arguments, URLs, console text, page errors, error messages, notes and apiLog lines. Values shorter than 4 characters are ignored with a warning. |
 | Secrets Playwright's options hold | `httpCredentials.password` and sensitive `extraHTTPHeaders` values are added automatically. Cookie values from `addCookies`, sensitive header values from `setExtraHTTPHeaders` and `setHTTPCredentials` passwords are learned at runtime. For `Authorization: Bearer X` (also `Basic`, `Token`, ...) both the whole value and the bare token are learned (`Basic` also its decoded password); a `Cookie` header yields each cookie value. |
@@ -73,9 +73,25 @@ Each secret that is *learned* at runtime (values typed into a masked field, `add
 
 Values configured in `redact.values`, and the automatic ones (`httpCredentials.password`, sensitive `extraHTTPHeaders`), are masked as the **literal value only**.
 
+:::warning `httpCredentials` in `test.use`
+Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as a list of two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`.
+:::
+
 :::warning Query strings are not masked by name in the browser log
 Only learned and configured values are masked in browser-log URLs; there is no masking by query-parameter name. A token the page puts in a URL that the test never typed or configured needs `redact.values`. (apiLog does mask query parameters by name.)
 :::
+
+### Sensitive field detection {#field-detection}
+
+A typed value is masked when the target's selector, label or placeholder matches `redact.selectors`. Card fields are recognised by the hints a selector shows, including expiry and PAN fields:
+
+- `[autocomplete=cc-number]`, `[name=cardnumber]`, `getByLabel('Card')`, `getByLabel('Credit card')`, `#card`, `#cvc`, `#securityCode`, `#totp`
+- Expiry and PAN: `[autocomplete=cc-exp]`, `cc-exp-month`, `cc-exp-year`, `cc-csc`, `getByLabel('Expiry date')`, `getByLabel('Expiration')`, `#expDate`, `getByLabel('PAN')`, `#pan`
+- The placeholders `MM/YY` and `MM/YYYY`, and the labels "Valid thru" and "Valid through", are read as expiry fields.
+
+Matching is by **whole word**, so `company`, `panel` and "expires in" are not matched. A CSS class such as `.card` or `getByText('Card')` is not a field.
+
+**Token splitting.** Before matching, selector, name, id, placeholder and label text is also split on camelCase boundaries and on `_`, `-` and space. `#cardExpDate`, `#panNumber` and `[name=cardPAN]` are therefore detected, while `Japan`, `Company` and `Expense` keep their letters and stay clear. The splitting applies to your own `redact.selectors` as well as the defaults.
 
 ### The headline recipe: `redact.values`
 
@@ -129,8 +145,13 @@ A value is found only as its literal text or in one of the [spellings above](#sp
 - a value split across several `console.log` arguments (each argument is checked on its own) or otherwise broken up, and pieces of a value.
 - fragments typed with `keyboard.type()`/`press()` into the middle of a field: only the strings passed to a call are learned, not the field's final content, and a key pressed with `press()` is one character that is never learned.
 - cookies the server sets with `Set-Cookie` in a response. The logger only learns cookie values your test passes to `addCookies` (or a `Cookie` header it sets), so a server-set cookie value that the page or a network line echoes is not masked. Put such values in `redact.values`, or read them with `context.cookies()` and add them yourself.
+- a value that mixes escaped and literal forms (for example half of it `\u`-escaped and half plain), or mixes upper- and lower-case hex within one value (`%2f` next to `%2F`, `\u00e9` next to `\u00C9`). "Lower and upper case" means per value: each value written all-lower or all-upper.
 
 What helps: list the values (and the transformed forms you know the page produces) in `redact.values`; use `redact.selectors` and `redact.keys` for fields and keys; turn off the channels that echo values (`browserConsole: false`, and `network: false`, which is the default); and avoid logging such values in the page. Do not rely on this logger as the only barrier for real secrets.
+
+Turning off `browserConsole` and `network` does **not** cover everything else the logger records: **action lines** (a base64 value passed as an argument to `page.evaluate(...)` is printed as given), **page errors**, **dialog text** and **navigation URLs**. For these, add the encoded form to `redact.values`, or switch the channel off: `actions: false`, `pageErrors: false`, `navigation: false` (dialogs and navigation URLs are part of `navigation`).
+
+The same applies to `httpCredentials` in `test.use`: Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, so an array needs `[[a, b], { scope: 'test' }]`.
 :::
 
 :::danger Playwright-owned artifacts are outside this logger
