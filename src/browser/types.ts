@@ -152,11 +152,21 @@ export const DEFAULT_BROWSER_CONFIG: Omit<ResolvedBrowserConfig, 'colors' | 'net
   sink: (line: string) => console.log(line),
 };
 
+/** Structural subset of Playwright's `HTTPCredentials`. */
+interface HttpCredentialsLike { username?: string; password?: string }
+
+function isCredList(
+    creds: HttpCredentialsLike | readonly HttpCredentialsLike[],
+): creds is readonly HttpCredentialsLike[] {
+  return Array.isArray(creds);
+}
+
 /** Secrets Playwright's own option fixtures may already hold. */
 export interface ResolveContext {
   /** The raw user `apiLog` option; its header redaction list is inherited. */
   apiLog?: ApiLoggerConfig;
-  httpCredentials?: { username?: string; password?: string } | undefined;
+  /** Playwright 1.64+ also accepts an array of credentials (one per origin). */
+  httpCredentials?: HttpCredentialsLike | readonly HttpCredentialsLike[] | undefined;
   extraHTTPHeaders?: Record<string, string> | undefined;
 }
 
@@ -185,8 +195,11 @@ export function resolveBrowserConfig(
   );
 
   const auto: unknown[] = [];
-  const password = context.httpCredentials?.password;
-  if (typeof password === 'string') auto.push(password);
+  const creds = context.httpCredentials;
+  const credList: readonly HttpCredentialsLike[] = !creds ? [] : isCredList(creds) ? creds : [creds];
+  for (const cred of credList) {
+    if (typeof cred?.password === 'string') auto.push(cred.password);
+  }
   if (context.extraHTTPHeaders) {
     const lowered = new Set(headers.map((h) => h.toLowerCase()));
     for (const [name, value] of Object.entries(context.extraHTTPHeaders)) {

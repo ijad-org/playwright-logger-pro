@@ -87,6 +87,17 @@ test('secrets are auto-collected from httpCredentials and sensitive extraHTTPHea
   assert.ok(!c.redact.values.includes('jo'));
 });
 
+test('httpCredentials as an array (Playwright 1.64+) learns every password', () => {
+  const c = resolveBrowserConfig({}, {
+    httpCredentials: [
+      { username: 'a', password: 'first-pass-1' },
+      { username: 'b', password: 'second-pass-2' },
+    ],
+  });
+  assert.ok(c.redact.values.includes('first-pass-1'));
+  assert.ok(c.redact.values.includes('second-pass-2'));
+});
+
 test('empty, non-string and short redact values are filtered out', () => {
   const warn = console.warn;
   console.warn = () => {};
