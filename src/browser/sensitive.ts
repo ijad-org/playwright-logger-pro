@@ -1,4 +1,4 @@
-import { DEFAULT_SENSITIVE_KEYS } from '../redact';
+import { DEFAULT_SENSITIVE_KEYS, matchesAny } from '../redact';
 
 /**
  * What counts as sensitive for browserLog. The names come from the list shared
@@ -48,6 +48,9 @@ export const DEFAULT_SENSITIVE_SELECTORS: readonly (string | RegExp)[] = [
   /(?:^|[^a-z])expir(?:y|ation)(?![a-z])/i,
   // Primary account number as a whole word: `#pan`, `getByLabel('PAN')`; not `company`, `panel`, `span`.
   /(?:^|[^a-z])pan(?![a-z])/i,
+  // Expiry hints without the word "expiry": placeholder `MM/YY`, `MM/YYYY`, label "Valid thru" / "Valid through".
+  /(?:^|[^a-z])mm\s*[/.-]\s*(?:yy|yyyy)(?![a-z])/i,
+  /(?:^|[^a-z])valid[-_ ]?(?:thru|through)(?![a-z])/i,
   /(?:credit|debit)[-_ ]?card/i,
   /security[-_ ]?code|verification[-_ ]?code|social[-_ ]?security/i,
   /\b(?:2fa|mfa|totp)\b/i,
@@ -57,6 +60,25 @@ export const DEFAULT_SENSITIVE_SELECTORS: readonly (string | RegExp)[] = [
   /get(?:ByLabel|ByPlaceholder)\(\s*'\s*card\s*'/i,
   /getByRole\('(?:textbox|spinbutton)',\s*\{[^}]*name:\s*'\s*card\s*'/i,
 ];
+
+/**
+ * Split on camelCase boundaries and turn `_` / `-` into spaces, so `cardExpDate` reads
+ * "card Exp Date", `panNumber` "pan Number" and `cardPAN` "card PAN" for the whole-word patterns.
+ * `Japan`, `Company` and `ExpDate` keep their letters; only real case changes are split.
+ */
+export function splitSelectorTokens(text: string): string {
+  return text
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ');
+}
+
+/** True if `text` matches a selector pattern as written or after `splitSelectorTokens`. */
+export function matchesSensitiveSelector(text: string, patterns: readonly (string | RegExp)[] | undefined): boolean {
+  if (matchesAny(text, patterns)) return true;
+  const split = splitSelectorTokens(text);
+  return split !== text && matchesAny(split, patterns);
+}
 
 /** Object keys masked inside arguments (`evaluate` args, cookies, option bags). */
 export const DEFAULT_SENSITIVE_KEY_PATTERNS: readonly (string | RegExp)[] =
