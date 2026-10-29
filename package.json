@@ -54,7 +54,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "test": "tsx --test test/curl.test.ts test/format.test.ts test/regressions.test.ts test/round2.test.ts",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "prepublishOnly": "pnpm build"
