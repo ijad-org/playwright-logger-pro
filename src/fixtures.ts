@@ -16,8 +16,12 @@ export interface ApiLoggerOptions {
  */
 export const test = base.extend<ApiLoggerOptions>({
   apiLog: [{}, { option: true }],
-  request: async ({ request, apiLog, baseURL }, use) => {
-    await use(wrapRequestContext(request, { baseURL, ...apiLog }));
+  request: async ({ request, apiLog, baseURL, extraHTTPHeaders }, use) => {
+    await use(wrapRequestContext(request, {
+      ...apiLog,
+      baseURL: apiLog.baseURL ?? baseURL,
+      extraHTTPHeaders: apiLog.extraHTTPHeaders ?? extraHTTPHeaders,
+    }));
   },
 });
 

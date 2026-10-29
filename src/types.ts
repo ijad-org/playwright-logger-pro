@@ -27,6 +27,16 @@ export interface ApiLoggerConfig {
   maxBodyLength?: number;
   /** Header names (case-insensitive) whose values are masked in logs and curl output. */
   redactHeaders?: string[];
+  /**
+   * Query parameter names (case-insensitive) whose values are masked in
+   * logged URLs and curl output.
+   */
+  redactQueryParams?: string[];
+  /**
+   * Keys (case-insensitive, at any depth) whose values are masked in JSON and
+   * form request/response bodies, in logs and curl output. Empty by default.
+   */
+  redactBodyKeys?: string[];
   /** Where log lines go. Defaults to console.log. */
   sink?: (line: string) => void;
   /**
@@ -35,9 +45,17 @@ export interface ApiLoggerConfig {
    * The `test` fixture fills this in from Playwright's `baseURL` automatically.
    */
   baseURL?: string;
+  /**
+   * Headers the context sends with every request (Playwright's
+   * `extraHTTPHeaders`), shown in logged headers and curl output. The `test`
+   * fixture fills this in from Playwright's `extraHTTPHeaders` automatically.
+   */
+  extraHTTPHeaders?: Record<string, string>;
 }
 
-export type ResolvedConfig = Required<Omit<ApiLoggerConfig, 'baseURL'>> & { baseURL?: string };
+type OptionalKeys = 'baseURL' | 'extraHTTPHeaders';
+export type ResolvedConfig =
+  Required<Omit<ApiLoggerConfig, OptionalKeys>> & Pick<ApiLoggerConfig, OptionalKeys>;
 
 type ColorEnv = Record<string, string | undefined>;
 interface MaybeTTY { isTTY?: boolean }
@@ -73,14 +91,20 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   logBody: true,
   maxBodyLength: 2000,
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
+  redactQueryParams: ['api_key', 'apikey', 'token', 'access_token', 'password', 'secret'],
+  redactBodyKeys: [],
   // eslint-disable-next-line no-console
   sink: (line: string) => console.log(line),
 };
 
 export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
+  // An option explicitly set to undefined falls back to its default.
+  const defined = Object.fromEntries(
+      Object.entries(config).filter(([, value]) => value !== undefined),
+  ) as ApiLoggerConfig;
   // Colors are detected per call (not only at module load) so the environment
   // the logger actually runs in is honoured.
-  return { ...DEFAULT_CONFIG, ...config, colors: config.colors ?? detectColorSupport() };
+  return { ...DEFAULT_CONFIG, ...defined, colors: config.colors ?? detectColorSupport() };
 }
 
 /** The subset of request information the logger cares about. */

@@ -2,13 +2,17 @@ import type { APIRequestContext, APIResponse } from '@playwright/test';
 import type { ApiLoggerConfig } from './types';
 import { resolveConfig } from './types';
 import { buildCurl } from './curl';
+import { cookieHeaderFor, type StoredCookie } from './cookies';
 import {
+  describeResponseBody,
   formatBody,
+  formatErrorLine,
   formatHeaders,
   formatRequestLine,
   formatResponseLine,
 } from './format';
 import { describeMultipart } from './multipart';
+import { redactBodyString, redactBodyValue, redactUrl } from './redact';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch'] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -23,6 +27,33 @@ interface RequestOptions {
 }
 
 /**
+ * `url` (absolute or relative) with `params` applied the way Playwright
+ * applies them: a string or URLSearchParams replaces the query, an object's
+ * entries are appended to it.
+ */
+function withParams(url: string, params: unknown): string {
+  if (params === undefined || params === null) return url;
+  const hashAt = url.indexOf('#');
+  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const hash = hashAt === -1 ? '' : url.slice(hashAt);
+  const queryAt = beforeHash.indexOf('?');
+  const path = queryAt === -1 ? beforeHash : beforeHash.slice(0, queryAt);
+  let search: URLSearchParams;
+  if (typeof params === 'string' || params instanceof URLSearchParams) {
+    search = new URLSearchParams(params);
+  } else if (typeof params === 'object') {
+    search = new URLSearchParams(queryAt === -1 ? '' : beforeHash.slice(queryAt + 1));
+    for (const [name, value] of Object.entries(params)) {
+      if (value !== undefined) search.append(name, String(value));
+    }
+  } else {
+    return url;
+  }
+  const query = search.toString();
+  return `${path}${query ? `?${query}` : ''}${hash}`;
+}
+
+/**
  * The absolute URL Playwright sent the first request to: `url` resolved
  * against the base URL, with `params` applied the way Playwright applies them.
  * Without a known base URL, relative URLs are resolved against `fallbackBase`.
@@ -31,20 +62,38 @@ function resolveRequestedUrl(
     url: string,
     params: unknown,
     baseURL: string | undefined,
-    fallbackBase: string,
+    fallbackBase: string | undefined,
 ): string | undefined {
   try {
-    const resolved = new URL(url, baseURL || fallbackBase);
-    if (typeof params === 'string') {
-      resolved.search = params;
-    } else if (params instanceof URLSearchParams) {
-      resolved.search = params.toString();
-    } else if (params && typeof params === 'object') {
-      for (const [name, value] of Object.entries(params)) {
-        if (value !== undefined) resolved.searchParams.append(name, String(value));
-      }
+    return new URL(withParams(url, params), baseURL || fallbackBase).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Per-call headers override context headers case-insensitively, as in Playwright. */
+function mergeHeaders(
+    contextHeaders: Record<string, string> | undefined,
+    callHeaders: Record<string, string> | undefined,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...contextHeaders };
+  for (const [key, value] of Object.entries(callHeaders ?? {})) {
+    for (const existing of Object.keys(merged)) {
+      if (existing.toLowerCase() === key.toLowerCase()) delete merged[existing];
     }
-    return resolved.toString();
+    merged[key] = value;
+  }
+  return merged;
+}
+
+function headerValue(headers: Record<string, string>, name: string): string | undefined {
+  return Object.entries(headers).find(([k]) => k.toLowerCase() === name)?.[1];
+}
+
+/** The context's cookie jar, or undefined when it cannot be read. */
+async function readCookies(context: APIRequestContext): Promise<StoredCookie[] | undefined> {
+  try {
+    return (await context.storageState()).cookies;
   } catch {
     return undefined;
   }
@@ -86,21 +135,62 @@ export function wrapRequestContext(
     const httpVerb = method === 'fetch' ?
       String(options?.method ?? 'get') :
       method;
+    const headers = mergeHeaders(cfg.extraHTTPHeaders, options?.headers);
+    const contentType = headerValue(headers, 'content-type');
+    const redactedUrl = (u: string) => redactUrl(u, cfg.redactQueryParams);
 
-    log(formatRequestLine(httpVerb, url, cfg));
-    if (cfg.logHeaders && options?.headers && Object.keys(options.headers).length > 0) {
-      log(formatHeaders(options.headers, cfg));
+    log(formatRequestLine(httpVerb, redactedUrl(withParams(url, options?.params)), cfg));
+    if (cfg.logHeaders && Object.keys(headers).length > 0) {
+      log(formatHeaders(headers, cfg));
     }
     if (cfg.logBody) {
+      const data = typeof options?.data === 'string' ?
+        redactBodyString(options.data, cfg.redactBodyKeys, contentType) :
+        redactBodyValue(options?.data, cfg.redactBodyKeys);
       const body = formatBody(
-          options?.data ?? options?.form ?? describeMultipart(options?.multipart), cfg,
+          data ?? redactBodyValue(options?.form, cfg.redactBodyKeys) ??
+          describeMultipart(options?.multipart, cfg.redactBodyKeys),
+          cfg,
       );
       if (body !== undefined) log(body);
     }
 
+    // Cookies the context sends implicitly, for the curl. Read before the
+    // request when every curl is printed, so a Set-Cookie in the response is
+    // not mistaken for a cookie that was sent.
+    const cookiesBefore = cfg.curl === true ? await readCookies(context) : undefined;
+    const printCurl = async (requestedUrl: string, followRedirects: boolean) => {
+      const cookies = cookiesBefore ?? await readCookies(context);
+      const cookie = headerValue(headers, 'cookie') === undefined && cookies ?
+        cookieHeaderFor(requestedUrl, cookies) :
+        undefined;
+      log(buildCurl({
+        method: httpVerb,
+        url: requestedUrl,
+        headers: cookie ? { ...headers, Cookie: cookie } : headers,
+        data: options?.data,
+        form: options?.form,
+        multipart: options?.multipart,
+        followRedirects,
+      }, cfg.redactHeaders, {
+        redactQueryParams: cfg.redactQueryParams,
+        redactBodyKeys: cfg.redactBodyKeys,
+        maxBodyLength: cfg.maxBodyLength,
+      }));
+    };
+
     const started = Date.now();
     const target = context[method] as (...a: unknown[]) => Promise<APIResponse>;
-    const response = await target.apply(context, args);
+    let response: APIResponse;
+    try {
+      response = await target.apply(context, args);
+    } catch (error) {
+      const requestedUrl = resolveRequestedUrl(url, options?.params, cfg.baseURL, undefined) ??
+        withParams(url, options?.params);
+      log(formatErrorLine(httpVerb, redactedUrl(requestedUrl), error, Date.now() - started, cfg));
+      if (cfg.curl !== false) await printCurl(requestedUrl, false);
+      throw error;
+    }
     const durationMs = Date.now() - started;
 
     // response.url() is the URL after redirects. Log and curl the URL that was
@@ -111,19 +201,18 @@ export function wrapRequestContext(
     const redirected = normalizeUrl(requestedUrl) !== normalizeUrl(finalUrl);
 
     log(formatResponseLine(
-        httpVerb, requestedUrl, response.status(), response.statusText(), durationMs, cfg,
-        redirected ? finalUrl : undefined,
+        httpVerb, redactedUrl(requestedUrl), response.status(), response.statusText(), durationMs,
+        cfg, redirected ? redactedUrl(finalUrl) : undefined,
     ));
-    if (cfg.logHeaders) {
-      const responseHeaders = response.headers();
-      if (Object.keys(responseHeaders).length > 0) {
-        log(formatHeaders(responseHeaders, cfg));
-      }
+    const responseHeaders = response.headers();
+    if (cfg.logHeaders && Object.keys(responseHeaders).length > 0) {
+      log(formatHeaders(responseHeaders, cfg));
     }
     if (cfg.logBody) {
       try {
-        const text = await response.text();
-        const body = formatBody(text, cfg);
+        const responseType = responseHeaders['content-type'];
+        const text = describeResponseBody(await response.body(), responseType);
+        const body = formatBody(redactBodyString(text, cfg.redactBodyKeys, responseType), cfg);
         if (body !== undefined) log(body);
       } catch {
         // body may not be readable (e.g. disposed context) — never fail the test for logging
@@ -131,15 +220,7 @@ export function wrapRequestContext(
     }
 
     if (cfg.curl === true || (cfg.curl === 'on-failure' && !response.ok())) {
-      log(buildCurl({
-        method: httpVerb,
-        url: requestedUrl,
-        headers: options?.headers,
-        data: options?.data,
-        form: options?.form,
-        multipart: options?.multipart,
-        followRedirects: redirected,
-      }, cfg.redactHeaders));
+      await printCurl(requestedUrl, redirected);
     }
 
     return response;

@@ -1,3 +1,5 @@
+import { REDACTED } from './redact';
+
 /** One part of a multipart/form-data body, normalised for logging and curl. */
 export type MultipartPart =
   | { kind: 'field'; name: string; value: string }
@@ -58,20 +60,36 @@ function toPart(name: string, value: unknown): MultipartPart {
 /**
  * Normalise Playwright's `multipart` option (a plain object or a FormData)
  * into a list of parts. Returns undefined when there is no multipart body.
+ * Values of fields named in `redactKeys` (case-insensitive) are masked.
  */
-export function multipartParts(multipart: unknown): MultipartPart[] | undefined {
+export function multipartParts(
+    multipart: unknown,
+    redactKeys: readonly string[] = [],
+): MultipartPart[] | undefined {
   if (multipart === undefined || multipart === null) return undefined;
+  let entries: Array<[string, unknown]>;
   if (isFormData(multipart)) {
-    return [...multipart.entries()].map(([name, value]) => toPart(name, value));
+    entries = [...multipart.entries()];
+  } else if (typeof multipart === 'object') {
+    entries = Object.entries(multipart as Record<string, unknown>);
+  } else {
+    return undefined;
   }
-  if (typeof multipart !== 'object') return undefined;
-  return Object.entries(multipart as Record<string, unknown>)
-      .map(([name, value]) => toPart(name, value));
+  const redacted = new Set(redactKeys.map((k) => k.toLowerCase()));
+  return entries.map(([name, value]) => {
+    const part = toPart(name, value);
+    return part.kind === 'field' && redacted.has(name.toLowerCase()) ?
+      { ...part, value: REDACTED } :
+      part;
+  });
 }
 
 /** Human-readable summary of a multipart body, one part per line. */
-export function describeMultipart(multipart: unknown): string | undefined {
-  const parts = multipartParts(multipart);
+export function describeMultipart(
+    multipart: unknown,
+    redactKeys: readonly string[] = [],
+): string | undefined {
+  const parts = multipartParts(multipart, redactKeys);
   if (!parts) return undefined;
   const lines = parts.map((part) => {
     if (part.kind === 'field') return `${part.name}: ${part.value}`;
