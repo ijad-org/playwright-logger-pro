@@ -1,0 +1,11 @@
+[1m── browser log · login.spec.ts › rejects a wrong password · failed ──[22m
+[2m+0.112s[22m  page#1 opened
+[2m+0.114s[22m  [32m✓[39m [36mpage[39m.[1mgoto[22m('/login')  [2m19ms[22m
+[2m+0.136s[22m  [35m▸ Log in[39m
+[2m+0.139s[22m  [2m│ [22m[32m✓[39m [36mgetByLabel('Email')[39m.[1mfill[22m('jo@example.com')  [2m31ms[22m
+[2m+0.170s[22m  [2m│ [22m[32m✓[39m [36mgetByLabel('Password')[39m.[1mfill[22m(***)  [2m5ms[22m
+[2m+0.176s[22m  [2m│ [22m[32m✓[39m [36mgetByRole('button', { name: 'Sign in' })[39m.[1mclick[22m()  [2m44ms[22m
+[2m+0.220s[22m  [35m◂ Log in[39m  [32mpassed[39m  [2m84ms[22m
+[2m+0.221s[22m  [31m✗[39m [36mlocator('.toast-success')[39m.[1mclick[22m({ timeout: 1500 })  [33m1501ms[39m  [31mTimeoutError: frame.click: Timeout 1500ms exceeded.[39m
+[2m+0.227s[22m  [31m⚠[39m [31mconsole.error[39m  Failed to load resource: the server responded with a status of 401 (Unauthorized)  [2m(session:0)[22m
+[2m+1.735s[22m  page#1 closed

@@ -1,0 +1,4 @@
+[34m→[39m [1m[36mGET[39m[22m /vegetables/99
+[34m←[39m [36mGET[39m http://localhost:3000/vegetables/99 [1m[33m404 Not Found[39m[22m [2m(2ms)[22m
+  {"error":"Vegetable 99 not found"}
+curl 'http://localhost:3000/vegetables/99'
