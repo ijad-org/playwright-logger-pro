@@ -1,8 +1,8 @@
-import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config, Plugin} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import npm2yarn from '@docusaurus/remark-plugin-npm2yarn';
 import topicsPlugin from './plugins/topics';
+import {lightTheme, darkTheme} from './src/prism-themes.mjs';
 
 const REPO = 'https://github.com/ijad-org/playwright-logger-pro';
 
@@ -69,9 +69,9 @@ const config: Config = {
         out: 'docs/api',
         plugin: ['./plugins/typedoc-module-names.mjs'],
         readme: 'none',
-        // Links like "Defined in src/fixtures.ts:50" to the main branch ({path} is relative to src/).
+        // "Defined in src/fixtures.ts" links to the file on the main branch ({path} is relative to src/). No line anchors: they drift with every edit.
         disableGit: true,
-        sourceLinkTemplate: `${REPO}/blob/main/src/{path}#L{line}`,
+        sourceLinkTemplate: `${REPO}/blob/main/src/{path}`,
         name: 'API reference',
         entryFileName: 'index',
         hideBreadcrumbs: true,
@@ -147,7 +147,6 @@ const config: Config = {
           title: 'Community',
           items: [
             {label: 'Issues', href: `${REPO}/issues`},
-            {label: 'Discussions', href: `${REPO}/discussions`},
             {label: 'Security policy', href: `${REPO}/security/policy`},
           ],
         },
@@ -165,8 +164,9 @@ const config: Config = {
         'Playwright Logger Pro is an independent open-source project. It is not affiliated with or endorsed by Microsoft or the Playwright project.',
     },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.vsDark,
+      // github / vsDark with the token colours below 4.5:1 contrast fixed (npm run check-prism).
+      theme: lightTheme,
+      darkTheme: darkTheme,
       additionalLanguages: ['bash', 'json', 'diff', 'powershell'],
     },
     tableOfContents: {minHeadingLevel: 2, maxHeadingLevel: 3},

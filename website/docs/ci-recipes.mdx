@@ -64,7 +64,7 @@ jobs:
 - **Secrets.** Pass them through `redact.values` as above. Workflow secrets are masked by GitHub in logs, but the report and attachments are separate files.
 
 :::danger Reports are artifacts
-`playwright-report/` and `test-results/` can contain raw values typed in tests (Playwright's own step titles, snapshots and traces). Read [Redaction & security](./redaction-security.mdx#limitations) before uploading them from a run that types real secrets.
+`playwright-report/` and `test-results/` can contain raw values typed in tests (Playwright's own step titles, snapshots and traces). Read [Redaction & security](./redaction-security.mdx#known-limits) before uploading them from a run that types real secrets.
 :::
 
 ## GitLab CI
