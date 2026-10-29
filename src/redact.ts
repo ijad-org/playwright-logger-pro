@@ -209,6 +209,8 @@ export interface SanitizeDeepOptions {
   mask?: string;
   /** Containers nested deeper than this are replaced by a placeholder. Default 4. */
   maxDepth?: number;
+  /** Return a replacement (used as-is, not walked) for values the caller wants to render itself. */
+  custom?: (value: unknown) => unknown;
 }
 
 /**
@@ -223,6 +225,10 @@ export function sanitizeDeep(value: unknown, options: SanitizeDeepOptions = {}):
   const seen = new WeakSet<object>();
 
   const walk = (v: unknown, depth: number): unknown => {
+    if (options.custom && v !== null && (typeof v === 'object' || typeof v === 'function')) {
+      const replaced = options.custom(v);
+      if (replaced !== undefined) return replaced;
+    }
     switch (typeof v) {
       case 'string': return redactText(v, options.values, mask);
       case 'number':

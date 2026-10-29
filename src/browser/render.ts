@@ -50,7 +50,7 @@ function body(ev: BrowserLogEvent, p: BrowserPalette): string {
         line += `  ${p.fail(`${oneLine(ev.error.name)}: ${firstLine(ev.error.message)}`)}`;
       }
       if (ev.location) {
-        line += `  ${p.dim(`(${ev.location.file}:${ev.location.line})`)}`;
+        line += `  ${p.dim(`(${ev.location.file.split(/[\\/]/).pop()}:${ev.location.line})`)}`;
       }
       return line;
     }

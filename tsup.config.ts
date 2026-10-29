@@ -6,5 +6,8 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  external: ['@playwright/test'],
+  // __dirname / import.meta.url for the library directory (src/libDir.ts)
+  shims: true,
+  target: 'node16',
+  external: ['@playwright/test', 'playwright-core'],
 });

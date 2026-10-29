@@ -55,6 +55,8 @@
   "scripts": {
     "build": "tsup",
     "test": "tsx --test test/*.test.ts",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:meta": "tsx --test e2e/meta/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "prepublishOnly": "pnpm build"
