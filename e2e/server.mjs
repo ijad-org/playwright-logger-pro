@@ -62,7 +62,7 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/api/ok') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, echo: url.search }));
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
   if (url.pathname === '/api/echo-headers') {

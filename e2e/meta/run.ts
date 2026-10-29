@@ -26,6 +26,8 @@ export interface MetaRun {
 }
 
 /** Run the meta Playwright project (e2e/meta/specs) in a child process and collect results. */
+let counter = 0;
+
 export function runMeta(args: string[] = [], env: Record<string, string> = {}): MetaRun {
   const root = process.env.PLP_META_ROOT || path.resolve(__dirname, "..", "..");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plp-meta-'));
@@ -33,7 +35,10 @@ export function runMeta(args: string[] = [], env: Record<string, string> = {}): 
   const outputDir = path.join(dir, 'output');
   const bin = process.env.PLP_PLAYWRIGHT_BIN || path.join(root, 'node_modules', '.bin', 'playwright');
   const childEnv: Record<string, string | undefined> = {
-    ...process.env, PLP_META_OUT: out, PLP_META_OUTPUT_DIR: outputDir, FORCE_COLOR: undefined, NO_COLOR: '1', ...env,
+    ...process.env,
+    // Meta files run concurrently: every run gets its own web server port.
+    PLP_E2E_PORT: String(20000 + ((process.pid * 7 + counter++ * 131) % 20000)),
+    PLP_META_OUT: out, PLP_META_OUTPUT_DIR: outputDir, FORCE_COLOR: undefined, NO_COLOR: '1', ...env,
   };
   delete childEnv.CI;
   const r = spawnSync(bin, ['test', '-c', path.join(root, 'e2e', 'meta', 'playwright.config.ts'), ...args], {

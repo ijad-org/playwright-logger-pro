@@ -1,4 +1,4 @@
-import { test as base } from '@playwright/test';
+import * as pw from '@playwright/test';
 import type { ApiLoggerConfig } from './types';
 import { wrapRequestContext } from './wrapRequestContext';
 import { BrowserLogSession, NOOP_HANDLE } from './browser/session';
@@ -6,6 +6,8 @@ import type { BrowserLogHandle } from './browser/session';
 import { getRegistry } from './browser/registry';
 import { installBrowserHooks } from './browser/install';
 import { ensureStackHygiene } from './browser/stackHygiene';
+import { writeOutputs } from './browser/output';
+import { wrapTestType } from './browser/steps';
 import { resolveBrowserConfig } from './browser/types';
 import type { BrowserLoggerConfig } from './browser/types';
 
@@ -43,7 +45,9 @@ interface InternalFixtures {
  * fixture is transparently wrapped with the API logger, and the actions a
  * test performs in the browser are recorded (see `browserLog`).
  */
-export const test = base.extend<LoggerOptions & BrowserLoggerFixtures & InternalFixtures>({
+const base = pw.test;
+
+export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtures & InternalFixtures>({
   apiLog: [{}, { option: true }],
   browserLog: [{}, { option: true }],
 
@@ -67,6 +71,7 @@ export const test = base.extend<LoggerOptions & BrowserLoggerFixtures & Internal
       session.detach();
       const reg = getRegistry();
       if (reg.activeSession === session) reg.activeSession = null;
+      await writeOutputs(session, testInfo);
     }
   }, { auto: true }],
 
@@ -96,7 +101,18 @@ export const test = base.extend<LoggerOptions & BrowserLoggerFixtures & Internal
   browserLogger: async ({ _plpSession }, use) => {
     await use(_plpSession?.handle ?? NOOP_HANDLE);
   },
-});
+}));
 
-export { expect } from '@playwright/test';
+/**
+ * `mergeTests` (Playwright 1.39+) that keeps the browser log's `test.step`
+ * integration on the merged test. Merging through Playwright's own
+ * `mergeTests` still logs actions, just without step markers.
+ */
+export const mergeTests: typeof pw.mergeTests = ((...tests: Parameters<typeof pw.mergeTests>) => {
+  const merge = (pw as { mergeTests?: (...t: unknown[]) => unknown }).mergeTests;
+  if (typeof merge !== 'function') throw new Error('mergeTests needs @playwright/test 1.39 or newer');
+  return wrapTestType(merge(...tests) as Parameters<typeof wrapTestType>[0]);
+}) as typeof pw.mergeTests;
+
+export const expect = pw.expect;
 export type { BrowserLogHandle, BrowserLoggerConfig };

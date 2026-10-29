@@ -83,7 +83,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** First stack frame outside our library and node internals. */
-function callSite(libDirs: Iterable<string>): { file: string; line: number; column: number } | undefined {
+export function callSite(libDirs: Iterable<string>): { file: string; line: number; column: number } | undefined {
   const dirs = [...libDirs];
   const limit = Error.stackTraceLimit;
   Error.stackTraceLimit = 20;
@@ -629,6 +629,33 @@ export class BrowserLogSession implements ActionSink {
       }
       this.push(this.actionEvent(rec, 'pending', end), true);
     }
+  }
+
+  /** Run the body of a `test.step`, recording its boundaries and tagging actions with the step path. */
+  runStep(title: string, run: () => unknown): unknown {
+    const reg = getRegistry();
+    const store = reg.als.getStore();
+    const name = this.scrub(title);
+    const started = now();
+    this.emit({ kind: 'step', phase: 'start', title: name });
+    const finish = (status: 'passed' | 'failed'): void => {
+      if (this.failed) return;
+      this.emit({ kind: 'step', phase: 'end', title: name, status, durationMs: Math.round(now() - started) });
+    };
+    const inner = { ...store, inAction: store?.inAction ?? false, step: [...(store?.step ?? []), name] };
+    let result: unknown;
+    try {
+      result = reg.als.run(inner, run);
+    } catch (error) {
+      finish('failed');
+      throw error;
+    }
+    if (result !== null && typeof result === 'object' && typeof (result as PromiseLike<unknown>).then === 'function') {
+      (result as PromiseLike<unknown>).then(() => finish('passed'), () => finish('failed'));
+    } else {
+      finish('passed');
+    }
+    return result;
   }
 
   /** Stop recording (Playwright's own fixture teardown follows). */
