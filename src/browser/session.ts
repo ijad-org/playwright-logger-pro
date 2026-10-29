@@ -1,8 +1,9 @@
 import { warnOnce } from '../warn';
 import {
-  MIN_LEARNED_SECRET_LENGTH, headerSecretValues, matchesAny, normalizeSecretValues, redactText, secretVariants,
+  MIN_LEARNED_SECRET_LENGTH, headerSecretValues, normalizeSecretValues, redactText, secretVariants,
 } from '../redact';
 import { splitChars } from '../format';
+import { matchesSensitiveSelector } from './sensitive';
 import { isPrintableKey, renderArgs, typedSecretStrings } from './args';
 import type { RenderedArgs } from './args';
 import { describeFrame, describeLocator, quote } from './describe';
@@ -527,7 +528,7 @@ export class BrowserLogSession implements ActionSink {
       selector = this.handleDescriptions.get(self);
     }
 
-    const sensitiveSelector = selector !== undefined && matchesAny(selector, this.red.selectors);
+    const sensitiveSelector = selector !== undefined && matchesSensitiveSelector(selector, this.red.selectors);
     if (page) {
       if (spec.category === 'navigation') this.sensitiveFocus.set(page, false);
       else if (selector !== undefined && spec.category === 'action' && (target === 'locator' || target === 'page' || target === 'frame')) {

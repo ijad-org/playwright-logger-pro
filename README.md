@@ -369,7 +369,13 @@ use: { browserLog: { redact: { selectors: [...DEFAULT_SENSITIVE_SELECTORS, '#pin
 > - fragments typed with `keyboard.type()`/`press()` into the middle of a field: only the strings passed to a call are learned, not the field's final content, and a key pressed with `press()` is one character that is never learned;
 > - cookies the server sets with `Set-Cookie` in a response: the logger only learns cookie values your test passes to `addCookies` (or a `Cookie` header it sets), so a server-set cookie value that the page or a network line echoes is not masked. Put such values in `redact.values`, or read them with `context.cookies()` and add them yourself.
 >
-> What helps: list the values (and the transformed forms you know the page produces) in `redact.values`; use `redact.selectors`/`redact.keys` for fields and keys; turn off the channels that echo values (`browserConsole: false`, `network: false`, which is the default); and avoid logging such values in the page. Do not rely on this logger as the only barrier for real secrets.
+> - a value that mixes escaped and literal forms (for example half of it `\u`-escaped and half plain), or mixes upper- and lower-case hex within one value (`%2f` next to `%2F`, `\u00e9` next to `\u00C9`). "Lower and upper case" means per value: each value written all-lower or all-upper.
+>
+> What helps: list the values (and the transformed forms you know the page produces, such as the base64 string) in `redact.values`; use `redact.selectors`/`redact.keys` for fields and keys; turn off the channels that echo values (`browserConsole: false`, `network: false`, which is the default); and avoid logging such values in the page. Do not rely on this logger as the only barrier for real secrets.
+>
+> Turning off `browserConsole` and `network` does **not** cover everything else the logger records: **action lines** (a base64 value passed as an argument to `page.evaluate(...)` is printed as given), **page errors**, **dialog text** and **navigation URLs**. For these, add the encoded form to `redact.values`, or switch the channel off: `actions: false`, `pageErrors: false`, `navigation: false` (dialogs and navigation URLs are part of `navigation`).
+>
+> `httpCredentials` in `test.use`: Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as a list of two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`.
 
 > **Limitation: Playwright-owned artifacts are outside this logger.** Masking covers what *this logger* outputs (console block, attachment, files, events, sink). Artifacts that Playwright itself writes can contain the raw values, **even with traces off** (`trace: 'off'`):
 >
