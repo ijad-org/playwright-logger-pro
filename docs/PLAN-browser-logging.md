@@ -651,7 +651,7 @@ Every cell marked "verify" is settled in M0 and written into README §Compatibil
 | # | Case | Handling |
 | --- | --- | --- |
 | 1 | Delegation, including after an await (`locator.selectText` → handle) | ALS dedupe: one event |
-| 2 | Concurrent actions (`Promise.all`) | Separate records, ordered by `seq`. Text output is in completion order |
+| 2 | Concurrent actions (`Promise.all`) | Separate records, ordered by `seq` (allocated when the action starts). Text output is in start order, each action followed by the events that happened while it ran; live output holds later lines back until an in-flight action finishes (PCL-38) |
 | 3 | An action never settles (test timeout) | Pending flush at `finish()` |
 | 4 | Page or context closed mid-action | Error event "Target closed". No crash in the logger |
 | 5 | Popups and `context.newPage()` | `context.on('page')` registers them and assigns ids |

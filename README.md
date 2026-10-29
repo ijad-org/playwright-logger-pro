@@ -324,8 +324,9 @@ Masked by default (`***`), in everything the logger outputs: the console block, 
 
 | What | How |
 | --- | --- |
-| Values typed with `fill()`, `type()`, `pressSequentially()`, `keyboard.type()`/`press()`, dialog prompt answers | Masked when the target looks sensitive: its selector, label or placeholder matches `redact.selectors` (`password`, `passcode`, `secret`, `token`, `otp`, `pin`, `cvv`, `card number`, `api key`, `type=password`, `autocomplete=current-password` …). `keyboard` input is masked while the last targeted field was sensitive; a navigation resets that. |
-| Literal secrets in `redact.values` | Masked everywhere: arguments, URLs, console text, page errors, error messages, notes, apiLog lines. Values shorter than 4 characters are ignored (with a warning). Playwright's `httpCredentials.password` and the values of sensitive `extraHTTPHeaders` are added automatically; cookie values from `addCookies`, sensitive header values from `setExtraHTTPHeaders` and `setHTTPCredentials` passwords are learned at runtime. |
+| Values typed with `fill()`, `type()`, `pressSequentially()`, `keyboard.type()`/`press()`, dialog prompt answers | Masked when the target looks sensitive: its selector, label or placeholder matches `redact.selectors` (`password`, `passcode`, `secret`, `token`, `otp`, `pin`, `cvv`, `api key`, `type=password`, `autocomplete=current-password` …). Card fields are recognised by the hints a selector shows: `#card`, `[name=cardnumber]`, `[autocomplete=cc-number]`, `getByLabel('Card')`, `getByLabel('Credit card')`, `#cvc`, `#securityCode`, `#totp` … (a CSS class such as `.card` or `getByText('Card')` is not a field). `keyboard` input is masked while the last targeted field was sensitive; a navigation resets that. |
+| Typed values that were masked | **Learned for the rest of the test**: whatever the page echoes of such a value (console messages, page errors, network and navigation URLs including query strings, dialog text, notes, apiLog lines) is masked too, also when the value is percent-encoded (`%40`, `+`, `%2f`) or JSON-escaped. Values shorter than 4 characters (after trimming) are never learned, since masking them would shred ordinary text; they stay masked in their own action line. The logger remembers the newest 256 typed secrets. A value is learned from the moment it is typed, so output recorded earlier is not changed. A key pressed with `press()` is a single character and is not learned. With `inspectInputType` a value is learned provisionally until the probe says whether the field is a password. Learning does not need the action line itself to be logged (`actions: false`). |
+| Literal secrets in `redact.values` | Masked everywhere: arguments, URLs, console text, page errors, error messages, notes, apiLog lines. Values shorter than 4 characters are ignored (with a warning). Playwright's `httpCredentials.password` and the values of sensitive `extraHTTPHeaders` are added automatically; cookie values from `addCookies`, sensitive header values from `setExtraHTTPHeaders` and `setHTTPCredentials` passwords are learned at runtime. For an `Authorization: Bearer X` (or `Basic`, `Token`, …) header both the whole value and the bare token `X` are learned (`Basic` also its decoded password); a `Cookie` header also yields each cookie value. |
 | Object keys inside arguments (`evaluate` args, option bags) | Keys matching `redact.keys` (`password`, `token`, `secret`, `api_key`, `authorization`, `cookie`, …). |
 | URLs | The password in `https://user:pass@host` is always masked. **Query strings are not masked by browserLog yet**: put tokens that appear in URLs into `redact.values`. |
 | Headers, cookies, credentials | `setExtraHTTPHeaders` values for the apiLog header list; `addCookies` values always; `setHTTPCredentials` password always. Same header list as apiLog (`redactHeaders`). |
@@ -345,13 +346,24 @@ use: { browserLog: { redact: { selectors: [...DEFAULT_SENSITIVE_SELECTORS, '#pin
 
 **Strict CI:** `redact: { fillValues: 'always' }` masks every typed value (`'never'` masks none; `redact.values` still applies).
 
-**`inspectInputType` (opt-in).** A password field whose selector, label and placeholder give no hint (`locator('#field7')` for `<input type=password>`) is not detected by the heuristics. With `redact: { inspectInputType: true }` the logger asks the page once per field (`type=password`, sensitive `autocomplete`) after a fill succeeds, and masks the value when the answer is yes, when the probe fails, or when the fill itself failed. The cost is one extra round trip per distinct field, and the probe shows up as an `evaluate` step in traces and the HTML report. It is off by default; the entry for such a fill appears once the probe has answered.
+**Query strings.** Only learned and configured values are masked in URLs; there is still no masking by query-parameter name. A token the page puts in a URL that the test never typed or configured needs `redact.values`.
 
-> **Limitation.** Playwright's own traces, the HTML report's step parameters and the `error-context.md` snapshot record raw action parameters. This logger redacts only **its own** outputs — it cannot redact Playwright's. If your secrets must not reach the report, keep traces off for those tests.
+**`inspectInputType` (opt-in).** A password field whose selector, label and placeholder give no hint (`locator('#field7')` for `<input type=password>`) is not detected by the heuristics. With `redact: { inspectInputType: true }` the logger asks the page once per field (`type=password`, sensitive `autocomplete`) after a fill succeeds, and masks the value when the answer is yes, when the probe fails, or when the fill itself failed. The cost is one extra round trip per distinct field, and the probe shows up as an `evaluate` step in traces and the HTML report. It is off by default; the entry for such a fill appears once the probe has answered. If the test ends before the probe answers, the fill is reported as completed (it did complete) with the value still masked, because its sensitivity is unknown.
+
+> **Limitation: Playwright-owned artifacts are outside this logger.** Masking covers what *this logger* outputs (console block, attachment, files, events, sink). Artifacts that Playwright itself writes can contain the raw values, **even with traces off** (`trace: 'off'`):
+>
+> - **HTML report step titles.** Playwright puts action arguments into step titles, and the report keeps them: on newer versions as `Fill "<the value>"` (seen on 1.64), and on older versions some steps carry values too. Do not assume any version is clean.
+> - **`error-context.md`.** For failed tests newer Playwright versions attach a page snapshot that includes the current values of form fields (seen on 1.64).
+> - **Traces, screenshots and videos** (when enabled) hold raw action parameters and page content.
+> - The same raw values are visible to other reporters (`json`, `blob`, `junit`, custom ones) and in Playwright's own error messages and call logs.
+>
+> `redact.values`, `redact.selectors` and the other `redact` options do not affect Playwright's report, traces or snapshots. What helps: use test-only credentials instead of real secrets; keep `trace`, `screenshot` and `video` off for such tests; do not publish or share `playwright-report/`, `test-results/` and CI artifacts of runs that type real secrets (or restrict who can open them); and check your Playwright version's reporter and artifact options. Whether a given version lets you switch the HTML step titles or `error-context.md` off is up to Playwright, not this logger, and this README does not promise it.
 
 ## browserLog options
 
 All options are optional and flat, like `apiLog`. `test.use({ browserLog })` replaces the whole object; `redact` is merged one level deep with the defaults.
+
+An option set to `undefined` uses its default. An unknown option or an invalid value (`print: 'yes'`, `browserConsole: 'verbose'`, `network: 'some'`, `slowActionMs: 'x'`, `redact.fillValues: 'sometimes'`, a `sink` that is not a function, `maxEvents: 0` …) never fails a test: the logger prints a one-time `[playwright-logger-pro]` warning naming the option and uses its default. In particular `maxEvents` must be a positive integer, so a bad value can never silently switch the failure block off.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -370,9 +382,9 @@ All options are optional and flat, like `apiLog`. `test.use({ browserLog })` rep
 | `includeApiLog` | `boolean` | `true` | Copy apiLog lines into the attachment/file (never printed twice). |
 | `logStart` | `boolean` | `false` | Also print a line when an action starts (needs `print: true`). |
 | `slowActionMs` | `number` | `1000` | Highlight slower actions; JSONL gets `slow: true`. |
-| `location` | `boolean` | `false` | Append `(login.spec.ts:14)` to each action. Costs one stack capture per action. |
+| `location` | `boolean` | `false` | Append the call site in your spec (`(login.spec.ts:14)`) to each action. Costs one stack capture per action. |
 | `maxArgLength` | `number` | `200` | Truncate each rendered argument and console message. |
-| `maxEvents` | `number` | `5000` | Ring buffer per test; the oldest events are dropped and a marker says how many. |
+| `maxEvents` | positive integer | `5000` | Ring buffer per test; the oldest events are dropped and a marker says how many. `0`, negative or fractional values warn and use the default. |
 | `redact` | `BrowserRedactConfig` | see below | Secret masking. |
 | `print` | `boolean \| 'on-failure'` | `'on-failure'` | Print to `sink`: live (`true`) or one block when the test failed. |
 | `attach` | `boolean \| 'on-failure'` | `'on-failure'` | Attach `browser-log` to the report. |
@@ -417,6 +429,7 @@ Before 1.48 `test.step` records the direct caller as the step location, which wo
 - The only listeners added are passive (`console`, `pageerror`, `framenavigated`, `popup`, `close`, `download`, …, and request events when `network` is on). For dialogs, a single listener repeats Playwright's default (dismiss) when nobody else handles the dialog, so a missing handler never hangs a test.
 - Wrapper frames are hidden from Playwright's stack attribution, so step and error locations stay in your spec (this also applies to the apiLog fixture).
 - Events are redacted when they are recorded; files and attachments never contain ANSI colors.
+- The timeline is in chronological order: an action sits at the time it *started*, followed by what happened while it ran (a dialog it opened, a page it closed). With `print: true` the line of a running action is printed when it finishes, and lines that follow it are held until then, so live output has the same order as the failure block (use `logStart: true` for an immediate "started" line).
 - The logger never deletes folders, never fails a test because of its own errors (it disables itself for that test and prints one warning), and adds no extra protocol round trips unless you opt in (`network`, `redact.inspectInputType`).
 
 ## Roadmap / Planned

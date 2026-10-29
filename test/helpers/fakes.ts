@@ -74,11 +74,14 @@ export class FakeLocator {
   first(): FakeLocator {
     return this;
   }
-  /** Set by tests: what the inspectInputType probe finds in the DOM. */
-  static probeResult: Array<string> | Error = ['text', ''];
+  /** Set by tests: what the inspectInputType probe finds in the DOM (a promise: answers whenever it settles). */
+  static probeResult: Array<string> | Error | Promise<unknown> = ['text', ''];
   async evaluate(): Promise<unknown> {
     if (FakeLocator.probeResult instanceof Error) throw FakeLocator.probeResult;
     return FakeLocator.probeResult;
+  }
+  async press(_key?: string): Promise<void> {
+    void _key;
   }
 }
 
@@ -116,6 +119,12 @@ export class FakePage extends EventEmitter {
   async fill(selector: string, value: string): Promise<void> {
     return this.frame.fill(selector, value);
   }
+  async setExtraHTTPHeaders(_headers?: unknown): Promise<void> {
+    void _headers;
+  }
+  async close(): Promise<void> {
+    this.emit('close');
+  }
   fail(): Promise<void> {
     return Promise.reject(new Error('page.fail: boom'));
   }
@@ -145,4 +154,22 @@ export class FakeContext extends EventEmitter {
   async addCookies(_cookies?: unknown): Promise<void> {
     void _cookies;
   }
+  async setExtraHTTPHeaders(_headers?: unknown): Promise<void> {
+    void _headers;
+  }
+}
+
+/** A dialog event payload (a class, because the logger patches the prototype of the first dialog it sees). */
+export class FakeDialog {
+  constructor(private readonly kind: string, private readonly text: string) {}
+  type(): string {
+    return this.kind;
+  }
+  message(): string {
+    return this.text;
+  }
+  async accept(_text?: string): Promise<void> {
+    void _text;
+  }
+  async dismiss(): Promise<void> {}
 }

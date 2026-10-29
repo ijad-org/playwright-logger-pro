@@ -171,6 +171,88 @@ export function normalizeSecretValues(values: readonly unknown[] | undefined): s
   return [...out].sort((a, b) => b.length - a.length);
 }
 
+/**
+ * Typed values (fill/type/... into a field detected as sensitive) shorter than
+ * this are not learned as secrets: masking a 1-3 character string in every
+ * console message, URL and error would shred ordinary text. Same floor as
+ * `redact.values`.
+ */
+export const MIN_LEARNED_SECRET_LENGTH = MIN_SECRET_LENGTH;
+
+const lowerHex = (s: string): string => s.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
+
+/**
+ * The value itself plus the spellings it takes when a page puts it in a URL
+ * or a JSON string: percent-encoded (`encodeURIComponent`, `encodeURI`, the
+ * RFC 3986 form that also encodes `!'()*`, which is how browsers serialise a
+ * query), with `+` for spaces, lower-case hex, and the JSON-escaped form.
+ * Variants shorter than MIN_SECRET_LENGTH are dropped.
+ */
+export function secretVariants(value: string): string[] {
+  const out = new Set<string>();
+  const add = (s: string): void => {
+    if (s.length >= MIN_SECRET_LENGTH) out.add(s);
+  };
+  const trimmed = value.trim();
+  for (const base of trimmed === value ? [value] : [value, trimmed]) {
+    add(base);
+    try {
+      const component = encodeURIComponent(base);
+      const strict = component.replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+      for (const c of [component, strict]) {
+        for (const form of [c, lowerHex(c)]) {
+          add(form);
+          add(form.replace(/%20/g, '+'));
+        }
+      }
+      add(encodeURI(base));
+    } catch {
+      // a lone surrogate cannot be encoded; the plain value is still masked
+    }
+    const json = JSON.stringify(base).slice(1, -1);
+    if (json !== base) add(json);
+  }
+  return [...out];
+}
+
+const AUTH_SCHEME = /^([A-Za-z][\w.~+-]*)\s+(\S.*)$/;
+
+/**
+ * The secrets a header value carries. `Authorization: Bearer X` also yields
+ * the bare token `X` (pages echo the token, not the scheme); `Basic base64`
+ * also yields the decoded `user:password` and the password; a `Cookie`
+ * header yields each cookie value. The whole value is always first.
+ */
+export function headerSecretValues(name: string, value: unknown): string[] {
+  if (typeof value !== 'string' || value.length === 0) return [];
+  const out: string[] = [value];
+  const derived = (s: string): void => {
+    if (s.length >= MIN_SECRET_LENGTH && !out.includes(s)) out.push(s);
+  };
+  const trimmed = value.trim();
+  derived(trimmed);
+  const scheme = AUTH_SCHEME.exec(trimmed);
+  if (scheme) {
+    const token = scheme[2].trim();
+    derived(token);
+    if (/^basic$/i.test(scheme[1]) && /^[A-Za-z0-9+/_-]+={0,2}$/.test(token)) {
+      const decoded = Buffer.from(token, 'base64').toString('utf8');
+      // eslint-disable-next-line no-control-regex
+      if (decoded.includes(':') && !/[\u0000-\u001f\u007f�]/.test(decoded)) {
+        derived(decoded);
+        derived(decoded.slice(decoded.indexOf(':') + 1));
+      }
+    }
+  }
+  if (/^(?:set-)?cookie$/i.test(name)) {
+    for (const part of trimmed.split(';')) {
+      const eq = part.indexOf('=');
+      if (eq > 0) derived(part.slice(eq + 1).trim());
+    }
+  }
+  return out;
+}
+
 /** Literal replacement (no regex), longest value first. */
 export function redactText(
     text: string,
@@ -179,7 +261,15 @@ export function redactText(
 ): string {
   if (!values || values.length === 0 || text.length === 0) return text;
   let out = text;
-  const ordered = values.length > 1 ? [...values].sort((a, b) => b.length - a.length) : values;
+  // Lists built by normalizeSecretValues are already longest first: only sort when they are not.
+  let sorted = true;
+  for (let i = 1; i < values.length; i++) {
+    if ((values[i - 1]?.length ?? 0) < (values[i]?.length ?? 0)) {
+      sorted = false;
+      break;
+    }
+  }
+  const ordered = sorted ? values : [...values].sort((a, b) => b.length - a.length);
   for (const value of ordered) {
     if (typeof value !== 'string' || value.length < MIN_SECRET_LENGTH) continue;
     if (out.includes(value)) out = out.split(value).join(mask);

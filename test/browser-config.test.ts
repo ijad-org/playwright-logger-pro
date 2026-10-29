@@ -81,7 +81,8 @@ test('secrets are auto-collected from httpCredentials and sensitive extraHTTPHea
     httpCredentials: { username: 'jo', password: 'basic-pass-9' },
     extraHTTPHeaders: { Authorization: 'Bearer abcdef', 'X-Trace': 'visible-value' },
   });
-  assert.deepEqual(c.redact.values, ['user-secret-1', 'basic-pass-9', 'Bearer abcdef'].sort((a, b) => b.length - a.length));
+  // `Bearer abcdef` is learned whole and as the bare token (PCL-32).
+  assert.deepEqual(c.redact.values, ['user-secret-1', 'basic-pass-9', 'Bearer abcdef', 'abcdef'].sort((a, b) => b.length - a.length));
   assert.ok(!c.redact.values.includes('visible-value'));
   assert.ok(!c.redact.values.includes('jo'));
 });

@@ -1,17 +1,23 @@
 import { warnOnce } from '../warn';
-import { matchesAny, normalizeSecretValues, redactText } from '../redact';
+import {
+  MIN_LEARNED_SECRET_LENGTH, headerSecretValues, matchesAny, normalizeSecretValues, redactText, secretVariants,
+} from '../redact';
 import { splitChars } from '../format';
-import { isPrintableKey, renderArgs } from './args';
+import { isPrintableKey, renderArgs, typedSecretStrings } from './args';
 import type { RenderedArgs } from './args';
 import { describeFrame, describeLocator, quote } from './describe';
 import { installContextPrototypes, installElementHandlePrototype, installPagePrototypes } from './install';
 import { attachContextListeners, attachPageListeners } from './listeners';
+import { OrderedPrinter } from './ordered';
 import { getRegistry } from './registry';
 import type { ActionRecord, ActionSink, BeginInput, Binding } from './registry';
+import { callSite } from './callSite';
 import { calledFromRunner } from './stackHygiene';
 import { renderBrowserEventText, renderBrowserTimeline } from './render';
 import type { MethodSpec } from './methods';
 import type { ActionCategory, ActionTarget, BrowserLogEvent, ResolvedBrowserConfig, ResolvedRedactConfig } from './types';
+
+export { callSite } from './callSite';
 
 type Distribute<T> = T extends unknown ? Omit<T, 'v' | 'seq' | 't' | 'ts'> & { seq?: number; t?: number } : never;
 export type NewEvent = Distribute<BrowserLogEvent>;
@@ -57,7 +63,14 @@ interface Pending {
   rerender?: (mask: boolean) => RenderedArgs;
   /** inspectInputType: the DOM probe that decides whether the typed value was a secret. */
   probe?: { page: object | undefined; selector: string; locator: () => unknown };
+  /** Typed values learned as secrets while the probe is undecided (taken back if the field turns out ordinary). */
+  learned?: string[];
+  /** The call has finished (the probe may still be running). */
+  done?: { end: number; error?: unknown };
 }
+
+/** Typed secrets remembered for the rest of the test; the oldest are forgotten beyond this. */
+const MAX_TYPED_SECRETS = 256;
 
 /** Evaluated in the page by the inspectInputType probe. */
 const PROBE_FN = (el: unknown): [string, string] => {
@@ -80,23 +93,6 @@ function errorMessage(error: unknown): string {
   } catch {
     return 'unknown error';
   }
-}
-
-/** First stack frame outside our library and node internals. */
-export function callSite(libDirs: Iterable<string>): { file: string; line: number; column: number } | undefined {
-  const dirs = [...libDirs];
-  const limit = Error.stackTraceLimit;
-  Error.stackTraceLimit = 20;
-  const stack = new Error().stack ?? '';
-  Error.stackTraceLimit = limit;
-  for (const raw of stack.split('\n').slice(1)) {
-    const m = /\(?((?:[a-zA-Z]:)?[^():]+|file:\/\/[^():]+):(\d+):(\d+)\)?$/.exec(raw.trim());
-    if (!m) continue;
-    const file = m[1].replace(/^file:\/\//, '');
-    if (file.startsWith('node:') || dirs.some((d) => file.startsWith(d))) continue;
-    return { file, line: Number(m[2]), column: Number(m[3]) };
-  }
-  return undefined;
 }
 
 export interface SessionMeta {
@@ -131,14 +127,20 @@ export class BrowserLogSession implements ActionSink {
   private readonly trackedContexts = new Set<object>();
   private readonly disposers: Array<() => void> = [];
   private red: ResolvedRedactConfig;
+  /** Configured and runtime-learned (cookies, headers, credentials) secrets. */
+  private baseValues: string[];
+  /** Values typed into sensitive fields -> how many unresolved probes vouch for them. Insertion ordered. */
+  private readonly typed = new Map<string, number>();
   /** When true, events print live to `sink` as they are recorded. */
   live: boolean;
   floating = false;
+  private readonly printer = new OrderedPrinter((text) => this.print(text));
 
   constructor(readonly cfg: ResolvedBrowserConfig, meta: SessionMeta = {}, live = cfg.print === true) {
     this.meta = meta;
     this.live = live;
     this.red = { ...cfg.redact, values: [...cfg.redact.values] };
+    this.baseValues = [...cfg.redact.values];
   }
 
   // -- redaction ------------------------------------------------------------
@@ -146,7 +148,58 @@ export class BrowserLogSession implements ActionSink {
   /** Mask a literal secret learned at runtime (cookie values, header values, ...). */
   addSecret(value: unknown): void {
     if (typeof value !== 'string') return;
-    this.red.values = normalizeSecretValues([...this.red.values, value]);
+    this.addSecrets([value]);
+  }
+
+  /** Learn several secrets at once, each with its URL-encoded spellings. */
+  addSecrets(values: readonly string[]): void {
+    const all = values.flatMap((v) => (typeof v === 'string' && v.length > 0 ? [v, ...secretVariants(v)] : []));
+    if (all.length === 0) return;
+    this.baseValues = normalizeSecretValues([...this.baseValues, ...all]);
+    this.rebuildValues();
+  }
+
+  /**
+   * Learn values typed into a field that is masked in its action line, so a page
+   * echoing them (console, URLs, errors, dialogs) is masked too. Values shorter
+   * than MIN_LEARNED_SECRET_LENGTH are not learned. Returns what was registered.
+   */
+  learnTyped(values: readonly string[]): string[] {
+    const learned: string[] = [];
+    let changed = false;
+    for (const v of values) {
+      if (typeof v !== 'string' || v.trim().length < MIN_LEARNED_SECRET_LENGTH) continue;
+      learned.push(v);
+      const n = this.typed.get(v);
+      this.typed.set(v, (n ?? 0) + 1);
+      if (n === undefined) changed = true;
+    }
+    for (const oldest of this.typed.keys()) {
+      if (this.typed.size <= MAX_TYPED_SECRETS) break;
+      this.typed.delete(oldest);
+      changed = true;
+    }
+    if (changed) this.rebuildValues();
+    return learned;
+  }
+
+  /** Take back values learned with `learnTyped` (the probe found an ordinary field). */
+  private unlearnTyped(values: readonly string[]): void {
+    let changed = false;
+    for (const v of values) {
+      const n = this.typed.get(v);
+      if (n === undefined) continue;
+      if (n <= 1) {
+        this.typed.delete(v);
+        changed = true;
+      } else this.typed.set(v, n - 1);
+    }
+    if (changed) this.rebuildValues();
+  }
+
+  private rebuildValues(): void {
+    const typed = [...this.typed.keys()].flatMap((v) => secretVariants(v));
+    this.red.values = normalizeSecretValues([...this.baseValues, ...typed]);
   }
 
   /** Redact free text: literal secrets only. */
@@ -177,6 +230,26 @@ export class BrowserLogSession implements ActionSink {
     return this.seqCounter++;
   }
 
+  /** Milliseconds since the session started, on the clock events are stamped with. */
+  elapsed(): number {
+    return now() - this.t0;
+  }
+
+  /**
+   * Reserve a place in the timeline for an event that is recorded a moment
+   * later (a page that just opened). Pass the result as `seq` (and `t`) to
+   * `emit`, or `unreserve` it.
+   */
+  reserve(): number {
+    const seq = this.nextSeq();
+    if (this.live) this.printer.hold(seq);
+    return seq;
+  }
+
+  unreserve(seq: number): void {
+    this.printer.release(seq);
+  }
+
   /** Record an event. `page` is set automatically when the session has several pages. */
   emit(event: NewEvent, pageObject?: object): BrowserLogEvent {
     const store = getRegistry().als.getStore();
@@ -192,11 +265,22 @@ export class BrowserLogSession implements ActionSink {
     return this.push(ev, true);
   }
 
+  /**
+   * Store an event in timeline order. Actions are stored when they finish but
+   * carry the `seq` and time of their start, so they are slotted in before the
+   * events that happened while they ran.
+   */
   protected push(ev: BrowserLogEvent, print: boolean): BrowserLogEvent {
-    this.buffer.push(ev);
+    const buffer = this.buffer;
+    let at = buffer.length;
+    while (at > 0 && buffer[at - 1].seq > ev.seq) at--;
+    if (at === buffer.length) buffer.push(ev);
+    else buffer.splice(at, 0, ev);
     const limit = this.cfg.maxEvents;
-    if (this.buffer.length > limit + Math.max(16, limit >> 2)) this.trim();
-    if (print && this.live && ev.kind !== 'api') this.print(renderBrowserEventText(ev, { colors: this.cfg.colors }));
+    if (buffer.length > limit + Math.max(16, limit >> 2)) this.trim();
+    if (print && this.live && ev.kind !== 'api') {
+      this.printer.put(ev.seq, renderBrowserEventText(ev, { colors: this.cfg.colors }));
+    }
     return ev;
   }
 
@@ -447,9 +531,7 @@ export class BrowserLogSession implements ActionSink {
     this.learnSecrets(spec, args);
     if (page && spec.category === 'navigation') this.probeCache.delete(page);
 
-    if (!this.wants(spec)) return undefined;
-    if (spec.runnerCheck && calledFromRunner()) return undefined;
-
+    const wanted = this.wants(spec);
     let maskSecret = false;
     let needsProbe = false;
     if (spec.secret) {
@@ -457,7 +539,8 @@ export class BrowserLogSession implements ActionSink {
       if (mode === 'always') maskSecret = true;
       else if (mode === 'auto') {
         maskSecret = selector !== undefined ? sensitiveSelector : (page ? this.sensitiveFocus.get(page) === true : false);
-        if (!maskSecret && selector !== undefined && this.red.inspectInputType && page &&
+        // The probe is a round trip, so it only runs for calls that are logged.
+        if (!maskSecret && wanted && selector !== undefined && this.red.inspectInputType && page &&
           (target === 'locator' || target === 'page' || target === 'frame') &&
           (spec.secret.kind !== 'key' || (typeof args[spec.secret.index] === 'string' && isPrintableKey(args[spec.secret.index] as string)))) {
           const cached = this.probeCache.get(page)?.get(selector);
@@ -466,6 +549,14 @@ export class BrowserLogSession implements ActionSink {
         }
       }
     }
+
+    // What is masked in the action line is also masked everywhere else from now on
+    // (the page echoes it into console messages, URLs, errors, dialogs), whether or not
+    // the action itself is logged. Undecided probe calls are learned provisionally.
+    const learned = maskSecret || needsProbe ? this.learnTyped(typedSecretStrings(spec, args)) : [];
+
+    if (!wanted) return undefined;
+    if (spec.runnerCheck && calledFromRunner()) return undefined;
 
     const ctx = { redact: this.red, maxArgLength: this.cfg.maxArgLength, maskSecret };
     // An undecided call is rendered masked (fail closed) until the probe says otherwise.
@@ -490,6 +581,7 @@ export class BrowserLogSession implements ActionSink {
       navUrl: spec.render === 'url' && method === 'goto' && typeof args[0] === 'string' ? args[0] : undefined,
       step: store?.step && store.step.length > 0 ? store.step : undefined,
       location: this.cfg.location ? callSite(getRegistry().libDirs) : undefined,
+      ...(needsProbe ? { learned } : {}),
     };
     if (needsProbe && selector !== undefined) {
       const sel = selector;
@@ -503,8 +595,13 @@ export class BrowserLogSession implements ActionSink {
       if (page) this.sensitiveFocus.set(page, true);
     }
     this.pending.set(rec.seq, rec);
-    if (this.cfg.logStart && this.live) {
-      this.print(renderBrowserEventText(this.actionEvent(rec, 'pending', now()), { colors: this.cfg.colors }).replace(/still pending after \d+ms/, 'started'));
+    if (this.live) {
+      if (this.cfg.logStart) {
+        this.print(renderBrowserEventText(this.actionEvent(rec, 'pending', now()), { colors: this.cfg.colors }).replace(/still pending after \d+ms/, 'started'));
+      } else {
+        // The line appears when the call finishes; what happens meanwhile follows it.
+        this.printer.hold(rec.seq);
+      }
     }
     return { seq: rec.seq };
   }
@@ -544,6 +641,8 @@ export class BrowserLogSession implements ActionSink {
         // The call failed, so there is nothing to inspect: the value stays masked.
         this.settle(rec, rec.rerender ? rec.rerender(true) : undefined, error);
       } else {
+        // If the test ends before the probe answers, the call is still reported as finished.
+        rec.done = { end: now() };
         this.runProbe(rec);
       }
       return;
@@ -561,7 +660,7 @@ export class BrowserLogSession implements ActionSink {
     }
     rec.rerender = undefined;
     rec.probe = undefined;
-    this.push(this.actionEvent(rec, error === undefined ? 'ok' : 'error', now(), error), true);
+    this.push(this.actionEvent(rec, error === undefined ? 'ok' : 'error', rec.done?.end ?? now(), error), true);
   }
 
   /** inspectInputType: ask the page whether the field the value went into is a password field. */
@@ -569,6 +668,7 @@ export class BrowserLogSession implements ActionSink {
     const probe = rec.probe;
     if (!probe) return;
     const decide = (sensitive: boolean): void => {
+      if (!sensitive && rec.learned) this.unlearnTyped(rec.learned);
       if (probe.page) {
         let cache = this.probeCache.get(probe.page);
         if (!cache) this.probeCache.set(probe.page, (cache = new Map()));
@@ -601,7 +701,8 @@ export class BrowserLogSession implements ActionSink {
       if (spec.render === 'headers' && first !== null && typeof first === 'object') {
         const names = new Set(this.red.headers.map((h) => h.toLowerCase()));
         for (const [name, value] of Object.entries(first as Record<string, unknown>)) {
-          if (names.has(name.toLowerCase())) this.addSecret(value);
+          // `Bearer X` is learned whole and as the bare token X.
+          if (names.has(name.toLowerCase())) this.addSecrets(headerSecretValues(name, value));
         }
       } else if (spec.render === 'cookies' && Array.isArray(first)) {
         for (const cookie of first) this.addSecret((cookie as { value?: unknown } | null)?.value);
@@ -620,6 +721,7 @@ export class BrowserLogSession implements ActionSink {
     const end = now();
     for (const rec of left) {
       if (rec.rerender) {
+        // Sensitivity still unknown: keep the value masked (safe side).
         const masked = rec.rerender(true);
         rec.args = masked.text;
         rec.redacted = masked.redacted;
@@ -627,8 +729,14 @@ export class BrowserLogSession implements ActionSink {
         rec.rerender = undefined;
         rec.probe = undefined;
       }
-      this.push(this.actionEvent(rec, 'pending', end), true);
+      if (rec.done) {
+        // The call completed and only the probe is outstanding: it is not pending.
+        this.push(this.actionEvent(rec, rec.done.error === undefined ? 'ok' : 'error', rec.done.end, rec.done.error), true);
+      } else {
+        this.push(this.actionEvent(rec, 'pending', end), true);
+      }
     }
+    this.printer.flush();
   }
 
   /** Run the body of a `test.step`, recording its boundaries and tagging actions with the step path. */
@@ -669,6 +777,7 @@ export class BrowserLogSession implements ActionSink {
     if (this.failed) return;
     this.failed = true;
     this.capturing = false;
+    this.printer.flush();
     warnOnce(`browserLog disabled for this test after an internal error: ${errorMessage(error)}`);
   }
 
@@ -676,6 +785,7 @@ export class BrowserLogSession implements ActionSink {
 
   /** Remove listeners and registry entries. The patched prototypes stay (inert). */
   detach(): void {
+    this.printer.flush();
     const reg = getRegistry();
     for (const dispose of this.disposers.splice(0)) {
       try {

@@ -143,7 +143,14 @@ test('steps: markers and indentation (Playwright 1.48+), step locations that poi
   }
   const stepSteps = r.steps.filter((s) => s.category === 'test.step');
   assert.ok(stepSteps.length >= 2, 'test.step steps are reported');
-  for (const s of stepSteps) assert.equal(path.basename(s.file ?? ''), SPEC, `step "${s.title}" located at ${s.file}`);
+  for (const s of stepSteps) {
+    assert.equal(path.basename(s.file ?? ''), SPEC, `step "${s.title}" located at ${s.file}`);
+    // PCL-34: a stack frame without parentheses used to leave "at " in the path ("../at /abs/outputs.spec.ts").
+    assert.ok(path.isAbsolute(s.file ?? ''), `step "${s.title}" file is not absolute: ${s.file}`);
+    assert.ok(!(s.file ?? '').includes('at '), `step "${s.title}" file keeps the stack prefix: ${s.file}`);
+    assert.ok(fs.existsSync(s.file ?? ''), `step "${s.title}" file does not exist: ${s.file}`);
+    assert.ok(typeof s.line === 'number' && s.line > 0, `step "${s.title}" has no line`);
+  }
 });
 
 test('canary: a planted secret never reaches stdout, attachments or files', () => {

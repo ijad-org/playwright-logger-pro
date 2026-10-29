@@ -33,6 +33,30 @@ const routes = {
      document.getElementById('result').textContent = 'status ' + r.status;
    };`),
 
+  // Echoes what was typed into the page's own output: console, URLs, page errors, prompt answers.
+  '/echo': () => page('Echo', `
+    <label>Password <input id="password" name="password" type="password"></label>
+    <label>Card <input id="card" name="cardnumber" autocomplete="cc-number"></label>
+    <label>Nickname <input id="nick" name="nick" type="text"></label>
+    <button id="send">Send</button><button id="ask">Ask</button><div id="o"></div>`,
+  `const v = (id) => document.getElementById(id).value;
+   document.getElementById('send').onclick = async () => {
+     console.log('debug password=' + v('password'));
+     console.error('card=' + v('card'));
+     console.warn('nick=' + v('nick'));
+     await fetch('/api/ok?token=' + encodeURIComponent(v('password')) + '&n=' + encodeURIComponent(v('nick')));
+     history.pushState({}, '', '/echo?session=' + encodeURIComponent(v('password')));
+     setTimeout(() => { throw new Error('boom ' + v('password')); }, 10);
+   };
+   document.getElementById('ask').onclick = () => {
+     const r = prompt('Enter your PIN');
+     console.warn('prompt answer ' + r);
+     document.getElementById('o').textContent = String(r);
+   };`),
+
+  // The input removes itself when typed into: the inspectInputType probe then waits for an element that is gone.
+  '/vanish': () => page('Vanish', '<input id="gone" oninput="this.remove()">'),
+
   '/frames': () => page('Frames', '<h1>Frames</h1><iframe id="f" name="inner" src="/frame-inner" width="400" height="200"></iframe>'),
   '/frame-inner': () => page('Inner', '<label>Card <input id="card" type="text"></label><button id="inner-btn">Inner</button>'),
 

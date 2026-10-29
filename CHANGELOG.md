@@ -20,8 +20,20 @@
 - `package.json` `exports` now has per-condition types (`.d.mts` for `import`, `.d.ts` for `require`) and exposes `./package.json`; the build targets Node 16 syntax and ships shims for `__dirname`/`import.meta.url`.
 - `redactHeaders()` accepts an optional third argument (the mask, default `***`).
 
+### Fixed (QA findings on this release)
+
+- **PCL-30 (critical): typed secrets are learned.** A value typed into a field that is masked in its action line (`fill`, `type`, `pressSequentially`, `keyboard.type`, `insertText`, prompt answers) is now masked everywhere the logger outputs, for the rest of the test: console messages, page errors, network and navigation URLs (query strings included, also percent-encoded), dialog text, notes, attachment, files, JSONL and sink events. Values shorter than 4 characters are not learned. Query-string redaction by parameter name is still not a feature.
+- **PCL-31: card fields.** `#card`, `[name=cardnumber]`, `[autocomplete=cc-number]`, `getByLabel('Card')`, `getByLabel('Credit card')`, `#cvc`, `#securityCode`, `#totp` … are detected from the selector. `inspectInputType` stays off by default.
+- **PCL-32: Authorization tokens.** `Bearer X` / `Basic …` / `Token X` set through `setExtraHTTPHeaders` (or the `extraHTTPHeaders` option) also masks the bare token `X`, the decoded Basic password and the values of a `Cookie` header.
+- **PCL-33 (docs): Playwright-owned artifacts.** The README now says that HTML report step titles, `error-context.md` and traces can contain raw values even with traces off, and that `redact.*` does not affect them.
+- **PCL-34: malformed `test.step` location.** Stack frames without parentheses (`at /abs/file.ts:11:5`) no longer keep the `at ` prefix; `file://` URLs and Windows paths are handled.
+- **PCL-35: `location: true`** reports the spec file and line instead of this library's `dist/` file (library, Playwright and node frames are skipped).
+- **PCL-36: option validation.** `browserLog` warns once on unknown options and on invalid types or values and falls back to the defaults; `maxEvents` of `0`, negative or fractional values no longer suppress the failure block.
+- **PCL-37: `inspectInputType` status.** A fill that completed is reported as completed (value still masked) when the test ends before the probe answers, not as "still pending".
+- **PCL-38: chronological timeline.** Actions are ordered by their start, followed by the events that happened while they ran, in the stored events, the failure block and live output. A page's "opened" line carries the time the page appeared.
+
 ### Known limitations
 
-- Playwright's own traces, HTML-report step parameters and `error-context.md` record raw action parameters (including values typed into password fields). This logger only redacts its own outputs.
+- Playwright's own artifacts record raw action parameters and page state, **even with traces off**: HTML report step titles (newer versions: `Fill "<value>"`), the `error-context.md` snapshot, traces, screenshots and videos. This logger only redacts its own outputs; `redact.*` does not affect Playwright's. See the README for what helps.
 - `test.step` integration needs Playwright 1.48+ (older versions cannot keep the step location); actions are still logged there, without step markers.
 - A password field whose selector, label and placeholder do not look like one is only detected with `redact.inspectInputType: true`, `redact.values`, a custom `redact.selectors` entry, or `redact.fillValues: 'always'`.

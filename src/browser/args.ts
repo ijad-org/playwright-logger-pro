@@ -42,7 +42,7 @@ export function isPrintableKey(key: string): boolean {
   return [...last].length === 1 && parts.slice(0, -1).every((p) => p === 'Shift');
 }
 
-function collectStrings(v: unknown, out: string[], depth = 0): void {
+export function collectStrings(v: unknown, out: string[], depth = 0): void {
   if (typeof v === 'string') {
     if (v.length > 0) out.push(v);
   } else if (depth < 3 && Array.isArray(v)) {
@@ -50,6 +50,20 @@ function collectStrings(v: unknown, out: string[], depth = 0): void {
   } else if (depth < 3 && v !== null && typeof v === 'object' && !playwrightClass(v)) {
     for (const x of Object.values(v)) collectStrings(x, out, depth + 1);
   }
+}
+
+/**
+ * The typed strings of the secret-bearing argument of a call (what `renderArgs`
+ * masks when `maskSecret` is set). Empty when the call carries no typed text,
+ * e.g. `keyboard.press('Enter')`.
+ */
+export function typedSecretStrings(spec: MethodSpec, args: unknown[]): string[] {
+  const out: string[] = [];
+  if (!spec.secret) return out;
+  const arg = args[spec.secret.index];
+  if (spec.secret.kind === 'key' && !(typeof arg === 'string' && isPrintableKey(arg))) return out;
+  collectStrings(arg, out);
+  return out;
 }
 
 type AnyFunction = (...args: never[]) => unknown;

@@ -125,8 +125,14 @@ export function attachPageListeners(session: BrowserLogSession, page: object, po
   // -- lifecycle -------------------------------------------------------------
   if (cfg.navigation) {
     // The context's `page` event fires before the opener's `popup` event, so wait a tick to tell them apart.
+    // The event keeps the place (and time) the page appeared at, not the tick it was reported in.
+    const seq = session.reserve();
+    const t = session.elapsed();
     setImmediate(() => {
-      if (session.failed || !session.hasPage(page)) return;
+      if (session.failed || !session.hasPage(page)) {
+        session.unreserve(seq);
+        return;
+      }
       const opener = session.openerOf(page);
       let url: string | undefined;
       try {
@@ -136,6 +142,8 @@ export function attachPageListeners(session: BrowserLogSession, page: object, po
       }
       session.emit({
         kind: 'page',
+        seq,
+        t,
         event: opener ? 'popup' : 'opened',
         page: session.idFor(page),
         ...(opener ? { opener: session.idFor(opener) } : {}),
@@ -199,7 +207,7 @@ export function attachPageListeners(session: BrowserLogSession, page: object, po
       const level = msg.type();
       if ((CONSOLE_RANK[level] ?? 0) < min) return;
       const loc = msg.location();
-      const where = loc && loc.url ? `${loc.url.split(/[\\/]/).pop()?.split('?')[0] ?? ''}:${loc.lineNumber ?? 0}` : undefined;
+      const where = loc && loc.url ? session.scrub(`${loc.url.split(/[\\/]/).pop()?.split('?')[0] ?? ''}:${loc.lineNumber ?? 0}`) : undefined;
       session.emit({
         kind: 'console',
         level,
