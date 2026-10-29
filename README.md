@@ -1,4 +1,4 @@
-# playwright-colorful-logger
+# Playwright Logger Pro
 
 Colorful request/response logging for Playwright's `APIRequestContext` — the spiritual successor of `superagent-logger` for Playwright API tests. Optionally prints a copy-pastable `curl` command for every request (or only for failures), with secret headers redacted.
 
@@ -20,9 +20,9 @@ Methods and statuses are color-coded (GET cyan, POST green, DELETE red, … / 2x
 ## Install
 
 ```sh
-npm i -D playwright-colorful-logger
+npm i -D playwright-logger-pro
 # or
-pnpm add -D playwright-colorful-logger
+pnpm add -D playwright-logger-pro
 ```
 
 `@playwright/test` >= 1.30 is a peer dependency — you already have it in a Playwright project.
@@ -34,7 +34,7 @@ pnpm add -D playwright-colorful-logger
 Replace the import of `test`/`expect` and every use of the built-in `request` fixture is logged automatically:
 
 ```ts
-import { test, expect } from 'playwright-colorful-logger/fixtures';
+import { test, expect } from 'playwright-logger-pro/fixtures';
 
 test('create vegetable', async ({ request }) => {
   const res = await request.post('/vegetables', { data: { name: 'Orange', price: 1 } });
@@ -46,7 +46,7 @@ Configure globally in `playwright.config.ts`:
 
 ```ts
 import { defineConfig } from '@playwright/test';
-import type { ApiLoggerOptions } from 'playwright-colorful-logger/fixtures';
+import type { ApiLoggerOptions } from 'playwright-logger-pro/fixtures';
 
 export default defineConfig<ApiLoggerOptions>({
   use: {
@@ -69,7 +69,7 @@ test.describe('debugging this flow', () => {
 
 ```ts
 import { request } from '@playwright/test';
-import { wrapRequestContext } from 'playwright-colorful-logger';
+import { wrapRequestContext } from 'playwright-logger-pro';
 
 const ctx = wrapRequestContext(
     await request.newContext({ baseURL: 'https://api.example.com' }),
@@ -127,6 +127,10 @@ use: { apiLog: { redactHeaders: ['authorization', 'x-internal-token'] } }
 | `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters. |
 | `redactHeaders` | `string[]` | `authorization, cookie, set-cookie, x-api-key` | Header values masked with `***` in logs **and** curl output. |
 | `sink` | `(line: string) => void` | `console.log` | Redirect output (file, allure attachment, …). |
+
+## Roadmap / Planned
+
+- Browser action logging (page actions, with secret redaction) - planned after the rename
 
 ## License
 
