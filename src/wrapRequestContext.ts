@@ -8,6 +8,7 @@ import {
   formatRequestLine,
   formatResponseLine,
 } from './format';
+import { describeMultipart } from './multipart';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch'] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -15,8 +16,46 @@ type HttpMethod = (typeof HTTP_METHODS)[number];
 interface RequestOptions {
   data?: unknown;
   form?: Record<string, string | number | boolean>;
+  multipart?: unknown;
+  params?: unknown;
   headers?: Record<string, string>;
   [key: string]: unknown;
+}
+
+/**
+ * The absolute URL Playwright sent the first request to: `url` resolved
+ * against the base URL, with `params` applied the way Playwright applies them.
+ * Without a known base URL, relative URLs are resolved against `fallbackBase`.
+ */
+function resolveRequestedUrl(
+    url: string,
+    params: unknown,
+    baseURL: string | undefined,
+    fallbackBase: string,
+): string | undefined {
+  try {
+    const resolved = new URL(url, baseURL || fallbackBase);
+    if (typeof params === 'string') {
+      resolved.search = params;
+    } else if (params instanceof URLSearchParams) {
+      resolved.search = params.toString();
+    } else if (params && typeof params === 'object') {
+      for (const [name, value] of Object.entries(params)) {
+        if (value !== undefined) resolved.searchParams.append(name, String(value));
+      }
+    }
+    return resolved.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeUrl(url: string): string {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return url;
+  }
 }
 
 function isHttpMethod(prop: string | symbol): prop is HttpMethod {
@@ -53,7 +92,9 @@ export function wrapRequestContext(
       log(formatHeaders(options.headers, cfg));
     }
     if (cfg.logBody) {
-      const body = formatBody(options?.data ?? options?.form, cfg);
+      const body = formatBody(
+          options?.data ?? options?.form ?? describeMultipart(options?.multipart), cfg,
+      );
       if (body !== undefined) log(body);
     }
 
@@ -62,8 +103,16 @@ export function wrapRequestContext(
     const response = await target.apply(context, args);
     const durationMs = Date.now() - started;
 
+    // response.url() is the URL after redirects. Log and curl the URL that was
+    // actually requested, noting the final URL when they differ.
+    const finalUrl = response.url();
+    const requestedUrl =
+      resolveRequestedUrl(url, options?.params, cfg.baseURL, finalUrl) ?? finalUrl;
+    const redirected = normalizeUrl(requestedUrl) !== normalizeUrl(finalUrl);
+
     log(formatResponseLine(
-        httpVerb, response.url(), response.status(), response.statusText(), durationMs, cfg,
+        httpVerb, requestedUrl, response.status(), response.statusText(), durationMs, cfg,
+        redirected ? finalUrl : undefined,
     ));
     if (cfg.logHeaders) {
       const responseHeaders = response.headers();
@@ -84,10 +133,12 @@ export function wrapRequestContext(
     if (cfg.curl === true || (cfg.curl === 'on-failure' && !response.ok())) {
       log(buildCurl({
         method: httpVerb,
-        url: response.url(),
+        url: requestedUrl,
         headers: options?.headers,
         data: options?.data,
         form: options?.form,
+        multipart: options?.multipart,
+        followRedirects: redirected,
       }, cfg.redactHeaders));
     }
 
