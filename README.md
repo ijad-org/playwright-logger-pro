@@ -344,6 +344,8 @@ One sensitive-key list serves both loggers: `DEFAULT_SENSITIVE_KEYS` is used by 
 
 When a masked call fails, its secret is also removed from the logged error message (Playwright's call log can echo arguments).
 
+**How selectors are matched.** The selector text (id, name, label, placeholder) is checked as written and again after it is split on camelCase, `_` and `-` boundaries, so `#cardExpDate`, `cardPAN` and `pan_number` are read as "card Exp Date", "card PAN" and "pan number" and caught by the whole-word patterns. Only real case changes are split, so `Japan`, `company` and `panel` stay clear. The same two-step check applies to your own `redact.selectors` (strings match case-insensitively as substrings, regular expressions are tested as-is), so a string such as `'card pan'` also matches `#card_pan`. The placeholders `MM/YY` and `MM/YYYY` are detected as expiry fields, as are the labels "Valid thru" and "Valid through".
+
 **Custom field names.** Extend the defaults rather than replacing them:
 
 ```ts
