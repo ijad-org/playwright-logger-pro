@@ -1,9 +1,10 @@
 {
   "name": "playwright-logger-pro",
-  "version": "0.1.0",
-  "description": "Colorful request/response logging for Playwright's APIRequestContext, with optional copy-pastable curl output",
+  "version": "0.2.0",
+  "description": "Colorful API and browser-action logging for Playwright: APIRequestContext requests with optional curl output, and a per-test browser timeline with secret redaction",
   "author": "Shahul Hameed M Y (https://linkedin.com/in/shahulhameedmy)",
   "license": "MIT",
+  "type": "commonjs",
   "packageManager": "pnpm@11.15.0",
   "repository": {
     "type": "git",
@@ -20,7 +21,11 @@
     "logging",
     "curl",
     "APIRequestContext",
-    "playwright-test"
+    "playwright-test",
+    "browser",
+    "page",
+    "locator",
+    "e2e"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -42,13 +47,15 @@
       "types": "./dist/fixtures.d.ts",
       "import": "./dist/fixtures.mjs",
       "require": "./dist/fixtures.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
+  "sideEffects": false,
   "engines": {
     "node": ">=18"
   },
@@ -59,7 +66,12 @@
     "test:meta": "tsx --test e2e/meta/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "pnpm build",
+    "smoke": "node scripts/smoke-dist.cjs && node scripts/smoke-dist.mjs",
+    "check:pkg": "npx --yes publint@0.3.25 --pack npm && npx --yes @arethetypeswrong/cli@0.18.5 --pack . --ignore-rules false-cjs",
+    "test:e2e:dist": "PLP_E2E_FROM=dist playwright test -c e2e/playwright.config.ts",
+    "perf": "node scripts/perf.mjs",
+    "drift": "tsx scripts/check-prototype-drift.ts"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.30.0"

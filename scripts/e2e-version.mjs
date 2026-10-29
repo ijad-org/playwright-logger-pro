@@ -19,7 +19,8 @@ const flag = (name) => {
   const i = argv.indexOf(`--${name}`);
   return i === -1 ? undefined : argv[i + 1] ?? true;
 };
-const browsers = flag('browsers') === 'all' ? ['chromium', 'firefox', 'webkit'] : ['chromium'];
+const requested = flag('browsers');
+const browsers = requested === 'all' ? ['chromium', 'firefox', 'webkit'] : typeof requested === 'string' ? requested.split(',') : ['chromium'];
 const only = flag('only'); // e2e | meta
 const grep = flag('grep');
 
@@ -39,7 +40,7 @@ if (!fs.existsSync(pwPkg)) {
 const installed = JSON.parse(fs.readFileSync(pwPkg, 'utf8')).version;
 const bin = path.join(dir, 'node_modules', '.bin', 'playwright');
 console.log(`\n== @playwright/test ${installed} (${browsers.join(', ')}) ==\n`);
-run(bin, ['install', ...browsers], { cwd: dir });
+run(bin, ['install', ...(process.env.PLP_INSTALL_DEPS ? ['--with-deps'] : []), ...browsers], { cwd: dir });
 
 // Fresh copy of the code under test.
 const repo = path.join(dir, 'repo');
@@ -52,7 +53,7 @@ fs.writeFileSync(path.join(repo, 'package.json'), '{"name":"playwright-logger-pr
 
 const env = {
   ...process.env,
-  PLP_E2E_BROWSERS: browsers.length > 1 ? 'all' : 'chromium',
+  PLP_E2E_BROWSERS: browsers.join(','),
   PLP_PLAYWRIGHT_BIN: bin,
   PLP_E2E_VERSION: installed,
   PLP_E2E_PORT: process.env.PLP_E2E_PORT || String(4200 + Math.floor(Math.random() * 500)),

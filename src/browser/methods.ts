@@ -49,6 +49,7 @@ function selectorFirst(): Table {
     setInputFiles: { category: 'action', selector: true, render: 'files' },
     waitForSelector: { category: 'wait', selector: true, result: 'handle' },
     $: { category: 'query', selector: true, result: 'handle' },
+    ...group('query', '$eval $$eval', { selector: true }),
     $$: { category: 'query', selector: true, result: 'handles' },
     ...group('query', 'textContent innerText innerHTML inputValue getAttribute isVisible isHidden isEnabled isDisabled isEditable isChecked', { selector: true }),
   };
@@ -70,8 +71,8 @@ const PAGE: Table = {
   ...group('navigation', 'reload goBack goForward'),
   ...group('action', 'close bringToFront setViewportSize emulateMedia screenshot pdf pause addLocatorHandler removeLocatorHandler'),
   addInitScript: { category: 'action', render: 'script' },
-  ...group('action', 'exposeFunction exposeBinding'),
-  ...group('action', 'route unroute', { render: 'urlPattern' }),
+  ...group('action', 'exposeFunction exposeBinding unrouteAll hideHighlight'),
+  ...group('action', 'route unroute routeWebSocket', { render: 'urlPattern' }),
   routeFromHAR: { category: 'action', render: 'har' },
   setExtraHTTPHeaders: { category: 'action', render: 'headers' },
   ...group('wait', 'waitForRequest waitForResponse', { render: 'urlPattern' }),
@@ -85,7 +86,7 @@ PAGE.screenshot = { category: 'action', runnerCheck: true };
 const FRAME: Table = { ...PAGE_FRAME_COMMON, ...group('query', 'title content') };
 
 const LOCATOR: Table = {
-  ...group('action', 'click dblclick tap clear check uncheck setChecked hover focus blur selectText scrollIntoViewIfNeeded screenshot highlight dispatchEvent'),
+  ...group('action', 'click dblclick tap clear check uncheck setChecked hover focus blur selectText scrollIntoViewIfNeeded screenshot highlight hideHighlight dispatchEvent drop'),
   fill: { category: 'action', secret: { index: 0, kind: 'value' } },
   type: { category: 'action', secret: { index: 0, kind: 'text' } },
   pressSequentially: { category: 'action', secret: { index: 0, kind: 'text' } },
@@ -96,6 +97,7 @@ const LOCATOR: Table = {
   ...group('action', 'evaluate evaluateAll evaluateHandle', { render: 'evaluate' }),
   waitFor: { category: 'wait' },
   elementHandle: { category: 'query', result: 'handle' },
+  elementHandles: { category: 'query', result: 'handles' },
   ...group('query', 'textContent innerText innerHTML inputValue getAttribute isVisible isHidden isEnabled isDisabled isEditable isChecked count boundingBox allTextContents allInnerTexts ariaSnapshot all'),
 };
 LOCATOR.screenshot = { category: 'action', runnerCheck: true };
