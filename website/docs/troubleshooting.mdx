@@ -60,6 +60,12 @@ The target did not look sensitive. See [Redaction & security](./redaction-securi
 
 If the value was transformed on its way to the log (base64, double-encoded, HTML-escaped, split over several `console.log` arguments, or a `Set-Cookie` value set by the server), the logger does not recognise it: list the value in `redact.values` or switch the echoing channel off. See the [limitations](./redaction-security.mdx#limitations).
 
+Also check these cases:
+
+- Turning off `browserConsole` and `network` does not cover **action lines** (a base64 value passed to `page.evaluate`), **page errors**, **dialog text** or **navigation URLs**. Add the encoded form to `redact.values`, or use `actions: false`, `pageErrors: false` or `navigation: false` (`navigation` covers dialogs and navigation URLs).
+- A value that mixes escaped and literal forms, or mixes upper- and lower-case hex within one value (`%2f` next to `%2F`), is not matched. Lower and upper case are matched per value.
+- A card, expiry or PAN field is missed: see [Sensitive field detection](./redaction-security.mdx#field-detection).
+
 ## Huge logs and slow runs
 
 - Reduce bodies: `maxBodyLength`, `logBody: false`, `logHeaders: false`.
