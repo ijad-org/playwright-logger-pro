@@ -45,7 +45,7 @@ run(bin, ['install', ...browsers], { cwd: dir });
 const repo = path.join(dir, 'repo');
 fs.rmSync(repo, { recursive: true, force: true });
 fs.mkdirSync(repo, { recursive: true });
-for (const item of ['src', 'e2e', 'dist', 'tsconfig.json']) {
+for (const item of ['src', 'e2e', 'scripts', 'dist', 'tsconfig.json']) {
   if (fs.existsSync(path.join(root, item))) fs.cpSync(path.join(root, item), path.join(repo, item), { recursive: true });
 }
 fs.writeFileSync(path.join(repo, 'package.json'), '{"name":"playwright-logger-pro-e2e","private":true}');
