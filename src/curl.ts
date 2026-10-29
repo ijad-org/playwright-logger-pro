@@ -1,6 +1,16 @@
 import type { RequestInfo } from './types';
 import { redactHeaders } from './format';
 import { multipartParts } from './multipart';
+import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
+
+export interface CurlOptions {
+  /** Query parameter names whose values are masked in the URL. */
+  redactQueryParams?: readonly string[];
+  /** JSON/form body keys and multipart field names whose values are masked. */
+  redactBodyKeys?: readonly string[];
+  /** Truncate the request body (and each form/field value) beyond this many characters. */
+  maxBodyLength?: number;
+}
 
 function shellQuote(value: string): string {
   // Single-quote for POSIX shells, escaping embedded single quotes.
@@ -14,25 +24,46 @@ function formValue(value: string): string {
 
 /**
  * Build a copy-pastable curl command equivalent to the given request.
- * Headers in `redact` are masked with *** so secrets never land in logs.
+ * Headers in `redact` (and query parameters / body keys per `options`) are
+ * masked with *** so secrets never land in logs.
  */
-export function buildCurl(info: RequestInfo, redact: string[] = []): string {
+export function buildCurl(
+    info: RequestInfo,
+    redact: string[] = [],
+    options: CurlOptions = {},
+): string {
+  const { redactQueryParams = [], redactBodyKeys = [], maxBodyLength } = options;
   const method = info.method.toUpperCase();
-  const parts = multipartParts(info.multipart);
+  const parts = multipartParts(info.multipart, redactBodyKeys);
   const hasBody = (parts !== undefined && parts.length > 0) ||
     (info.form !== undefined && Object.keys(info.form).length > 0) ||
     (info.data !== undefined && info.data !== null);
   // When following redirects, let a body imply POST instead of forcing it
   // with -X: curl then switches to GET on 301/302/303 like Playwright does,
   // rather than re-POSTing the body to the redirect target.
-  const impliedMethod = method === 'GET' || (info.followRedirects && method === 'POST' && hasBody);
+  // A body alone would make curl send POST, so GET with a body needs -X GET.
+  const impliedMethod = (method === 'GET' && !hasBody) ||
+    (info.followRedirects && method === 'POST' && hasBody);
+  const methodFlag = method === 'HEAD' ?
+    // -X HEAD makes curl wait for a response body that never comes.
+    '--head' :
+    (impliedMethod ? undefined : `-X ${method}`);
   const head = [
     'curl',
-    ...(impliedMethod ? [] : [`-X ${method}`]),
+    ...(methodFlag ? [methodFlag] : []),
     ...(info.followRedirects ? ['-L'] : []),
-    shellQuote(info.url),
+    shellQuote(redactUrl(info.url, redactQueryParams)),
   ].join(' ');
   const lines: string[] = [head];
+
+  const notes: string[] = [];
+  const truncated: number[] = [];
+  const limit = (value: string): string => {
+    if (maxBodyLength === undefined || value.length <= maxBodyLength) return value;
+    truncated.push(value.length);
+    return value.slice(0, maxBodyLength);
+  };
+  const redactedKeys = new Set(redactBodyKeys.map((k) => k.toLowerCase()));
 
   const headers = redactHeaders(info.headers ?? {}, redact);
   for (const [key, value] of Object.entries(headers)) {
@@ -46,7 +77,7 @@ export function buildCurl(info: RequestInfo, redact: string[] = []): string {
     for (const part of parts) {
       if (part.kind === 'field') {
         // --form-string: no @file / <file / ;type= interpretation of the value.
-        lines.push(`--form-string ${shellQuote(`${part.name}=${part.value}`)}`);
+        lines.push(`--form-string ${shellQuote(`${part.name}=${limit(part.value)}`)}`);
         continue;
       }
       const source = part.path ?? part.filename;
@@ -57,21 +88,29 @@ export function buildCurl(info: RequestInfo, redact: string[] = []): string {
     }
   } else if (info.form && Object.keys(info.form).length > 0) {
     for (const [key, value] of Object.entries(info.form)) {
-      lines.push(`--data-urlencode ${shellQuote(`${key}=${value}`)}`);
+      const safe = redactedKeys.has(key.toLowerCase()) ? REDACTED : limit(String(value));
+      lines.push(`--data-urlencode ${shellQuote(`${key}=${safe}`)}`);
     }
   } else if (info.data !== undefined && info.data !== null) {
-    const hasContentType = Object.keys(headers)
-        .some((h) => h.toLowerCase() === 'content-type');
-    if (typeof info.data === 'object' && !Buffer.isBuffer(info.data) && !hasContentType) {
+    const contentType = Object.entries(headers)
+        .find(([h]) => h.toLowerCase() === 'content-type')?.[1];
+    if (typeof info.data === 'object' && !Buffer.isBuffer(info.data) && contentType === undefined) {
       lines.push(`-H ${shellQuote('Content-Type: application/json')}`);
     }
     const body = Buffer.isBuffer(info.data) ?
       '<binary body omitted>' :
-      (typeof info.data === 'string' ? info.data : JSON.stringify(info.data));
-    lines.push(`--data-raw ${shellQuote(body)}`);
+      (typeof info.data === 'string' ?
+        redactBodyString(info.data, redactBodyKeys, contentType) :
+        JSON.stringify(redactBodyValue(info.data, redactBodyKeys)));
+    lines.push(`--data-raw ${shellQuote(limit(body))}`);
   }
 
-  const command = lines.join(' \\\n  ');
-  if (localFiles.length === 0) return command;
-  return `# multipart file content is read from local file(s): ${localFiles.join(', ')}\n${command}`;
+  if (localFiles.length > 0) {
+    notes.push(`# multipart file content is read from local file(s): ${localFiles.join(', ')}`);
+  }
+  if (truncated.length > 0) {
+    notes.push(`# request body truncated to maxBodyLength (${maxBodyLength} of ` +
+      `${Math.max(...truncated)} chars); the replayed body is incomplete`);
+  }
+  return [...notes, lines.join(' \\\n  ')].join('\n');
 }
