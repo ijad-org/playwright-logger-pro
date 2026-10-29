@@ -131,6 +131,8 @@ export class BrowserLogSession implements ActionSink {
   private baseValues: string[];
   /** Values typed into sensitive fields -> how many unresolved probes vouch for them. Insertion ordered. */
   private readonly typed = new Map<string, number>();
+  /** Spellings of each typed value, computed once when it is learned. */
+  private readonly typedVariants = new Map<string, string[]>();
   /** When true, events print live to `sink` as they are recorded. */
   live: boolean;
   floating = false;
@@ -172,11 +174,15 @@ export class BrowserLogSession implements ActionSink {
       learned.push(v);
       const n = this.typed.get(v);
       this.typed.set(v, (n ?? 0) + 1);
-      if (n === undefined) changed = true;
+      if (n === undefined) {
+        this.typedVariants.set(v, secretVariants(v));
+        changed = true;
+      }
     }
     for (const oldest of this.typed.keys()) {
       if (this.typed.size <= MAX_TYPED_SECRETS) break;
       this.typed.delete(oldest);
+      this.typedVariants.delete(oldest);
       changed = true;
     }
     if (changed) this.rebuildValues();
@@ -191,6 +197,7 @@ export class BrowserLogSession implements ActionSink {
       if (n === undefined) continue;
       if (n <= 1) {
         this.typed.delete(v);
+        this.typedVariants.delete(v);
         changed = true;
       } else this.typed.set(v, n - 1);
     }
@@ -198,7 +205,7 @@ export class BrowserLogSession implements ActionSink {
   }
 
   private rebuildValues(): void {
-    const typed = [...this.typed.keys()].flatMap((v) => secretVariants(v));
+    const typed = [...this.typedVariants.values()].flat();
     this.red.values = normalizeSecretValues([...this.baseValues, ...typed]);
   }
 
