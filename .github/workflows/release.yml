@@ -115,9 +115,11 @@ jobs:
     # Only a manual run of a stable tag can publish; a tag push never does.
     if: github.event_name == 'workflow_dispatch' && needs.verify.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
-    # Protected environment: set required reviewers (the human publish approval) and, optionally,
-    # a deployment branch/tag rule on it in Settings -> Environments. NPM_TOKEN is stored as a
-    # secret of this environment (or the repository) and is never printed by this workflow.
+    # Protected environment: the human publish approval. In Settings -> Environments create
+    # `npm-publish` with required reviewers and a deployment rule limited to `v*` tags.
+    # NPM_TOKEN must be an environment secret of `npm-publish`, never a repository-level secret
+    # (a repo secret would let an edited workflow publish without the reviewers). This workflow
+    # never prints it.
     environment: npm-publish
     permissions:
       contents: read

@@ -81,7 +81,7 @@ The first rows change what you see in logs. Review them before merging the migra
 
 | Area | `playwright-colorful-logger` | `playwright-logger-pro` | Revert with |
 | --- | --- | --- | --- |
-| Colours | On only when stdout is a TTY. Colourless under the test runner. | **On by default under `playwright test`** (it sets `FORCE_COLOR` for workers). `NO_COLOR` turns them off. | `colors: false` |
+| Colours | On only when stdout is a TTY. Colourless under the test runner. | **On by default under `playwright test`** (it sets `FORCE_COLOR` for workers). `NO_COLOR` turns them off. On Playwright 1.64 with piped output the reporter strips colour from stdout, while the sink files keep it (see [Troubleshooting](./troubleshooting.mdx#colours)). | `colors: false` |
 | Query-string secrets | Logged as is. | **Values of `api_key`, `apikey`, `token`, `access_token`, `password` and `secret` are masked** in logged URLs and curl. | `replaceDefaultRedaction: true` with your own `redactQueryParams` (not recommended) |
 | Header redaction lists | A custom `redactHeaders` **replaced** the defaults. | Custom lists are **merged** with the defaults, so `authorization`, `cookie`, `set-cookie` and `x-api-key` stay masked. | `replaceDefaultRedaction: true` |
 | Redirected requests | Logged and curl'd the final URL and method. | **Log and curl the originally requested URL and method.** The curl adds `-L`, or one curl per step when the method changes. | None |

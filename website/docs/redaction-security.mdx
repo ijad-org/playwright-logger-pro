@@ -8,7 +8,7 @@ description: What is masked by default in API and browser logs, how to mask more
 Logs, CI artifacts and test reports get shared. Playwright Logger Pro masks secrets in **everything it outputs**: console, attachments, files, in-memory events and curl commands. Masked values are replaced with `***` (configurable for the browser log).
 
 :::danger Playwright's own artifacts are not redacted by this library
-Redaction covers what *this logger* writes. Playwright itself records raw values in HTML report step titles, `error-context.md`, traces, screenshots and videos, **even with traces off**. See [Limitations](#limitations) before sharing a report.
+Redaction covers what *this logger* writes. Playwright itself records raw values in HTML report step titles, `error-context.md`, traces, screenshots and videos, **even with traces off**. See [Known limits](#known-limits) before sharing a report.
 :::
 
 ## API logging {#api-logging}
@@ -134,7 +134,7 @@ export default defineConfig<LoggerOptions>({
 
 Control characters in logged bodies and browser-log text are escaped (`\x1b`), so output from a server or a page cannot inject terminal escape sequences into your logs or CI viewer.
 
-## Limitations {#limitations}
+## Known limits {#known-limits}
 
 :::danger Masking is literal-form based
 A value is found only as its literal text or in one of the [spellings above](#spellings). These are **not** detected and appear in clear:

@@ -122,7 +122,19 @@ All of `get`, `post`, `put`, `patch`, `delete`, `head` and `fetch` are logged. `
 
 The logged URL and method are the ones you requested. For a redirected request the curl follows Playwright's rules, which differ from `curl -L`: a 303 turns any method except GET/HEAD into a GET without a body, a 301/302 turns a POST into a GET, and PUT/PATCH/DELETE keep their method and body on 301/302/307/308.
 
-A redirected GET or HEAD gets `-L`. Any other redirected request gets **one curl per step**, with the method, URL and body Playwright actually used. `Cookie` is left out of later steps, and `Authorization` when the redirect leaves the origin. The steps are read from Playwright's fetch log; if that is not available, a POST with a body is replayed with `-L` and any other method is replayed without following the redirect, with a comment saying so.
+A redirected GET or HEAD gets `-L`. Any other redirected request gets **one curl per step**, with the method, URL and body Playwright actually used (a step that became a GET has no body and no `Content-Type`/`Content-Length`, and it stays a bodiless GET on later 307/308 steps). Which headers are forwarded depends on the Playwright version (see below). The steps are read from Playwright's fetch log; if that is not available, a POST with a body is replayed with `-L` and any other method is replayed without following the redirect, with a comment saying so.
+
+### Redirect headers by Playwright version
+
+Which headers Playwright forwards to a redirect target changed between releases. The step curls follow the version that is installed (read from its `package.json`; when it cannot be found the 1.60+ rules are used). Secrets are redacted in every step as usual.
+
+| Playwright | `Cookie` you set | `Authorization` to another origin |
+| --- | --- | --- |
+| 1.30 – 1.31 | dropped | forwarded |
+| 1.32 – 1.59 | forwarded if spelled `Cookie`, dropped if spelled `cookie`; the same exact-case rule applies to `Content-Type` and the other body headers when a redirect becomes a GET | forwarded |
+| 1.60+ | dropped | dropped |
+
+Cookies from the cookie jar are never carried over: Playwright re-reads the jar for each step, and they are not in the printed steps. On 1.30 – 1.59 a replayed step curl really does send your `Authorization` (and, on 1.32 – 1.59, `Cookie`) to the other origin, because Playwright did; the values in the printed curl are still redacted.
 
 ## curl output
 

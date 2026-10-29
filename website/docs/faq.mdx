@@ -11,15 +11,15 @@ No. It records and prints; it does not retry, wait, reorder or swallow anything.
 
 ## Is it safe with production secrets?
 
-The logger masks secrets in its **own** output by default. Playwright's report, traces, screenshots and `error-context.md` can still contain raw values, and masking inside the browser log is literal-form based (base64, double encoding, HTML entities, split values and server-set `Set-Cookie` values are not detected). Use test-only credentials and read [Redaction & security](./redaction-security.mdx#limitations).
+The logger masks secrets in its **own** output by default. Playwright's report, traces, screenshots and `error-context.md` can still contain raw values, and masking inside the browser log is literal-form based (base64, double encoding, HTML entities, split values and server-set `Set-Cookie` values are not detected). Use test-only credentials and read [Redaction & security](./redaction-security.mdx#known-limits).
 
 ## Why is my `httpCredentials` array not used as I expect?
 
-Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as a list of two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`. The logger collects every password in the resolved array (see [Redaction & security](./redaction-security.mdx#limitations)).
+Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as a list of two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`. The logger collects every password in the resolved array (see [Redaction & security](./redaction-security.mdx#known-limits)).
 
 ## Does turning off `browserConsole` and `network` stop all echoing of a secret?
 
-No. Action lines (for example a base64 value passed to `page.evaluate`), page errors, dialog text and navigation URLs are still recorded. Add the encoded form to `redact.values`, or use `actions: false`, `pageErrors: false` or `navigation: false`. See [Redaction & security](./redaction-security.mdx#limitations).
+No. Action lines (for example a base64 value passed to `page.evaluate`), page errors, dialog text and navigation URLs are still recorded. Add the encoded form to `redact.values`, or use `actions: false`, `pageErrors: false` or `navigation: false`. See [Redaction & security](./redaction-security.mdx#known-limits).
 
 ## Which card fields are detected?
 
