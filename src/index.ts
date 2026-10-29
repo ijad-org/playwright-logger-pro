@@ -13,7 +13,14 @@ export {
   truncateBody,
   stringifyBody,
 } from './format';
-export type { ApiLoggerConfig, RequestInfo, ResolvedConfig } from './types';
-export { DEFAULT_CONFIG, detectColorSupport, resolveConfig } from './types';
+export type { ApiLoggerConfig, RedirectHop, RequestInfo, ResolvedConfig } from './types';
+export {
+  DEFAULT_CONFIG,
+  DEFAULT_REDACT_BODY_KEYS,
+  DEFAULT_REDACT_HEADERS,
+  DEFAULT_REDACT_QUERY_PARAMS,
+  detectColorSupport,
+  resolveConfig,
+} from './types';
 export { describeMultipart } from './multipart';
 export { redactUrl, redactQueryString, redactBodyValue, redactBodyString } from './redact';

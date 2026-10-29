@@ -1,5 +1,5 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import type { ApiLoggerConfig } from './types';
+import type { ApiLoggerConfig, RedirectHop } from './types';
 import { resolveConfig } from './types';
 import { buildCurl } from './curl';
 import { cookieHeaderFor, type StoredCookie } from './cookies';
@@ -12,6 +12,7 @@ import {
   formatResponseLine,
 } from './format';
 import { describeMultipart } from './multipart';
+import { readRedirectChain } from './redirects';
 import { redactBodyString, redactBodyValue, redactUrl } from './redact';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch'] as const;
@@ -155,14 +156,17 @@ export function wrapRequestContext(
       if (body !== undefined) log(body);
     }
 
-    // Cookies the context sends implicitly, for the curl. Read before the
-    // request when every curl is printed, so a Set-Cookie in the response is
-    // not mistaken for a cookie that was sent.
-    const cookiesBefore = cfg.curl === true ? await readCookies(context) : undefined;
-    const printCurl = async (requestedUrl: string, followRedirects: boolean) => {
-      const cookies = cookiesBefore ?? await readCookies(context);
-      const cookie = headerValue(headers, 'cookie') === undefined && cookies ?
-        cookieHeaderFor(requestedUrl, cookies) :
+    // Cookies the context sends implicitly, for the curl. Always read before
+    // the request: afterwards the jar also holds the cookies the response set,
+    // which the request never sent.
+    const cookiesBefore = cfg.curl !== false ? await readCookies(context) : undefined;
+    const printCurl = async (
+        requestedUrl: string,
+        followRedirects: boolean,
+        redirects?: RedirectHop[],
+    ) => {
+      const cookie = headerValue(headers, 'cookie') === undefined && cookiesBefore ?
+        cookieHeaderFor(requestedUrl, cookiesBefore) :
         undefined;
       log(buildCurl({
         method: httpVerb,
@@ -172,6 +176,7 @@ export function wrapRequestContext(
         form: options?.form,
         multipart: options?.multipart,
         followRedirects,
+        redirects,
       }, cfg.redactHeaders, {
         redactQueryParams: cfg.redactQueryParams,
         redactBodyKeys: cfg.redactBodyKeys,
@@ -220,7 +225,8 @@ export function wrapRequestContext(
     }
 
     if (cfg.curl === true || (cfg.curl === 'on-failure' && !response.ok())) {
-      await printCurl(requestedUrl, redirected);
+      const chain = redirected ? await readRedirectChain(response) : undefined;
+      await printCurl(requestedUrl, redirected, chain);
     }
 
     return response;

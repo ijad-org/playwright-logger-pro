@@ -56,7 +56,7 @@ function palette(colors: boolean): Palette {
 
 export function redactHeaders(
     headers: Record<string, string>,
-    redactList: string[],
+    redactList: readonly string[],
 ): Record<string, string> {
   const lowered = redactList.map((h) => h.toLowerCase());
   const out: Record<string, string> = {};
@@ -189,11 +189,12 @@ export function formatHeaders(
   const p = palette(config.colors);
   const safe = redactHeaders(headers, config.redactHeaders);
   return Object.entries(safe)
-      .map(([k, v]) => {
-        const value = URL_HEADERS.includes(k.toLowerCase()) ?
-          redactUrl(v, config.redactQueryParams) :
-          v;
-        return `  ${p.dim(`${k}:`)} ${value}`;
+      .flatMap(([k, v]) => {
+        const isUrl = URL_HEADERS.includes(k.toLowerCase());
+        // Playwright joins repeated headers (Set-Cookie, ...) with newlines:
+        // print one indented `name: value` line per value.
+        return String(v).split('\n').map((value) =>
+          `  ${p.dim(`${k}:`)} ${isUrl ? redactUrl(value, config.redactQueryParams) : value}`);
       })
       .join('\n');
 }
