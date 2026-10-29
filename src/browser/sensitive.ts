@@ -40,6 +40,14 @@ export const DEFAULT_SENSITIVE_SELECTORS: readonly (string | RegExp)[] = [
   /card[-_ ]?number/i,
   /(?:^|[^a-z])card[-_ .]?(?:num|no)(?![a-z])/i,
   /\bcc[-_ ]?(?:number|num|csc|cvc|cvv)(?![a-z])/i,
+  // Expiry: `autocomplete=cc-exp` / `cc-exp-month` / `cc-exp-year`, `#cardExpiry`, labels
+  // "Expiry date", "Expiration", "Exp date". Whole words only: `expires`, `express` stay clear.
+  /\bcc[-_ ]?exp(?:[-_ ]?(?:month|year|date|mm|yy|yyyy))?(?![a-z])/i,
+  /card[-_ ]?exp(?:iry|iration)?(?![a-z])/i,
+  /(?:^|[^a-z])(?:expir(?:y|ation)|exp)[-_ .]{0,2}(?:date|month|year|mm|yy|yyyy)(?![a-z])/i,
+  /(?:^|[^a-z])expir(?:y|ation)(?![a-z])/i,
+  // Primary account number as a whole word: `#pan`, `getByLabel('PAN')`; not `company`, `panel`, `span`.
+  /(?:^|[^a-z])pan(?![a-z])/i,
   /(?:credit|debit)[-_ ]?card/i,
   /security[-_ ]?code|verification[-_ ]?code|social[-_ ]?security/i,
   /\b(?:2fa|mfa|totp)\b/i,

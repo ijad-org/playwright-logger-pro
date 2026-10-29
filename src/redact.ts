@@ -181,12 +181,76 @@ export const MIN_LEARNED_SECRET_LENGTH = MIN_SECRET_LENGTH;
 
 const lowerHex = (s: string): string => s.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
 
+const hex4 = (code: number, upper: boolean): string => {
+  const h = code.toString(16).padStart(4, '0');
+  return upper ? h.toUpperCase() : h;
+};
+
+const JSON_SHORT_ESCAPES: Readonly<Record<string, string>> = {
+  '"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t',
+};
+
 /**
- * The value itself plus the spellings it takes when a page puts it in a URL
- * or a JSON string: percent-encoded (`encodeURIComponent`, `encodeURI`, the
- * RFC 3986 form that also encodes `!'()*`, which is how browsers serialise a
- * query), with `+` for spaces, lower-case hex, and the JSON-escaped form.
- * Variants shorter than MIN_SECRET_LENGTH are dropped.
+ * JSON string body (no quotes) as an encoder with the given policy writes it:
+ * `\/` for slashes, and every non-ASCII UTF-16 code unit (surrogate pairs as
+ * two escapes) as `\uXXXX`. Control characters use the short escapes or `\u00XX`.
+ */
+function jsonBody(value: string, escapeSlash: boolean, escapeUnicode: boolean, upper: boolean): string {
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i] as string;
+    const code = value.charCodeAt(i);
+    const short = JSON_SHORT_ESCAPES[ch];
+    if (short !== undefined) out += short;
+    else if (ch === '/' && escapeSlash) out += '\\/';
+    else if (code < 0x20) out += `\\u${hex4(code, upper)}`;
+    else if (code > 0x7f && escapeUnicode) out += `\\u${hex4(code, upper)}`;
+    else out += ch;
+  }
+  return out;
+}
+
+/** Every UTF-16 code unit as `\uXXXX`. */
+function allUnicodeEscapes(value: string, upper: boolean): string {
+  let out = '';
+  for (let i = 0; i < value.length; i++) out += `\\u${hex4(value.charCodeAt(i), upper)}`;
+  return out;
+}
+
+const ESCAPE_SAFE = /[A-Za-z0-9@*_+\-./]/;
+
+/** The legacy global `escape()`: `%XX` below 256, `%uXXXX` above, per UTF-16 code unit. */
+function legacyEscape(value: string, upper: boolean): string {
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i] as string;
+    if (ESCAPE_SAFE.test(ch)) {
+      out += ch;
+      continue;
+    }
+    const code = value.charCodeAt(i);
+    const h = code.toString(16);
+    const body = code < 256 ? `%${h.padStart(2, '0')}` : `%u${h.padStart(4, '0')}`;
+    out += upper ? body.toUpperCase().replace('%U', '%u') : body;
+  }
+  return out;
+}
+
+/**
+ * The value itself plus every spelling this logger recognises (and no other).
+ * Computed once per secret when it is learned.
+ *
+ * - percent-encoded: `encodeURIComponent`, `encodeURI`, the RFC 3986 form that
+ *   also encodes `!'()*` (how browsers serialise a query), each with upper- and
+ *   lower-case hex and with `+` for spaces;
+ * - legacy `escape()`: `%XX` / `%uXXXX`, upper- and lower-case hex;
+ * - JSON string bodies: `JSON.stringify`, the same with `\/` for slashes, PHP
+ *   `json_encode` defaults (`\/` and every non-ASCII code unit as `\uXXXX`,
+ *   surrogate pairs as two), Python `ensure_ascii` (no `\/`), and every character
+ *   as `\uXXXX`; `\u` hex in lower and upper case.
+ *
+ * Variants shorter than MIN_SECRET_LENGTH are dropped. Base64, double
+ * encoding, HTML entities and split values are not covered.
  */
 export function secretVariants(value: string): string[] {
   const out = new Set<string>();
@@ -209,8 +273,14 @@ export function secretVariants(value: string): string[] {
     } catch {
       // a lone surrogate cannot be encoded; the plain value is still masked
     }
-    const json = JSON.stringify(base).slice(1, -1);
-    if (json !== base) add(json);
+    for (const upper of [false, true]) {
+      add(legacyEscape(base, upper));
+      for (const escapeSlash of [false, true]) {
+        for (const escapeUnicode of [false, true]) add(jsonBody(base, escapeSlash, escapeUnicode, upper));
+      }
+      add(allUnicodeEscapes(base, upper));
+    }
+    add(JSON.stringify(base).slice(1, -1));
   }
   return [...out];
 }

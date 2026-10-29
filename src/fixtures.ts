@@ -108,11 +108,14 @@ export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtur
  * integration on the merged test. Merging through Playwright's own
  * `mergeTests` still logs actions, just without step markers.
  */
-export const mergeTests: typeof pw.mergeTests = ((...tests: Parameters<typeof pw.mergeTests>) => {
+// Playwright's own signature when it has one (1.39+); a loose one on older type packages.
+type MergeTests = typeof pw extends { mergeTests: infer F } ? F : (...tests: pw.TestType<never, never>[]) => pw.TestType<never, never>;
+
+export const mergeTests: MergeTests = ((...tests: unknown[]) => {
   const merge = (pw as { mergeTests?: (...t: unknown[]) => unknown }).mergeTests;
   if (typeof merge !== 'function') throw new Error('mergeTests needs @playwright/test 1.39 or newer');
   return wrapTestType(merge(...tests) as Parameters<typeof wrapTestType>[0]);
-}) as typeof pw.mergeTests;
+}) as unknown as MergeTests;
 
 export const expect = pw.expect;
 export type { BrowserLogHandle, BrowserLoggerConfig };
