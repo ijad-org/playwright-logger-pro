@@ -7,6 +7,8 @@ export default defineConfig({
   timeout: 20_000,
   retries: 0,
   workers: 2,
+  // Benchmarks only run through scripts/perf.mjs.
+  ...(process.env.PLP_E2E_PERF ? { grep: /@perf/ } : { grepInvert: /@perf/ }),
   reporter: [['list']],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
@@ -27,10 +29,8 @@ export default defineConfig({
       testMatch: /noop\.spec/,
       use: { browserName: 'chromium', browserLog: { enabled: false } } as never,
     },
-    ...(process.env.PLP_E2E_BROWSERS === 'all' ?
-      [
-        { name: 'firefox', use: { browserName: 'firefox' as const }, testIgnore: /noop\.spec/ },
-        { name: 'webkit', use: { browserName: 'webkit' as const }, testIgnore: /noop\.spec/ },
-      ] : []),
+    ...(['firefox', 'webkit'] as const)
+        .filter((name) => (process.env.PLP_E2E_BROWSERS ?? '').split(',').includes(name) || process.env.PLP_E2E_BROWSERS === 'all')
+        .map((name) => ({ name, use: { browserName: name }, testIgnore: /noop\.spec/ })),
   ],
 });

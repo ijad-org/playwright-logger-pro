@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: prototype drift against the latest Playwright.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck, lint, unit, build, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm smoke
+      - run: pnpm check:pkg
+
+  e2e:
+    name: e2e · Playwright ${{ matrix.playwright }} · Node ${{ matrix.node }}
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { playwright: '1.30.0', node: 18, browsers: chromium }
+          - { playwright: '1.39.0', node: 20, browsers: chromium }
+          - { playwright: '1.48.0', node: 20, browsers: chromium }
+          - { playwright: latest, node: 22, browsers: chromium }
+          - { playwright: latest, node: 22, browsers: 'all' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Sources first, then the built package: both must behave the same.
+      - run: node scripts/e2e-version.mjs ${{ matrix.playwright }} --browsers ${{ matrix.browsers }}
+        env:
+          PLP_INSTALL_DEPS: '1'
+      - run: PLP_E2E_FROM=dist node scripts/e2e-version.mjs ${{ matrix.playwright }} --browsers ${{ matrix.browsers }}
+        env:
+          PLP_INSTALL_DEPS: '1'
+
+  perf:
+    name: overhead benchmark
+    needs: check
+    runs-on: ubuntu-latest
+    continue-on-error: true # informational: not a gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: node scripts/perf.mjs --rounds 5
+
+  drift:
+    name: prototype drift (latest Playwright)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm add -D --no-lockfile @playwright/test@latest
+      - run: pnpm exec playwright install --with-deps chromium
+      # Emits one warning annotation per public async method that browserLog does not know yet.
+      - run: pnpm drift

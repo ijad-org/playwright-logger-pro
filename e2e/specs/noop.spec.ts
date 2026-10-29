@@ -23,5 +23,5 @@ test('enabled:false -> nothing installed, nothing recorded, nothing attached', a
 
   expect(browserLogger.events()).toEqual([]);
   expect(browserLogger.render()).toBe('');
-  expect(testInfo.attachments).toEqual([]);
+  expect([...testInfo.attachments]).toEqual([]);
 });
