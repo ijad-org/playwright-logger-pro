@@ -10,4 +10,5 @@ export {
   stringifyBody,
 } from './format';
 export type { ApiLoggerConfig, RequestInfo, ResolvedConfig } from './types';
-export { DEFAULT_CONFIG, resolveConfig } from './types';
+export { DEFAULT_CONFIG, detectColorSupport, resolveConfig } from './types';
+export { describeMultipart } from './multipart';

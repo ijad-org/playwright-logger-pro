@@ -1,4 +1,4 @@
-import pc from 'picocolors';
+import { createColors } from 'picocolors';
 import type { ResolvedConfig } from './types';
 
 type Colorizer = (s: string) => string;
@@ -13,6 +13,10 @@ interface Palette {
 }
 
 const identity: Colorizer = (s) => s;
+
+// Always-on colorizers: once `colors` has been resolved to true it must win
+// over picocolors' own env detection (NO_COLOR, non-TTY, ...).
+const pc = createColors(true);
 
 function palette(colors: boolean): Palette {
   if (!colors) {
@@ -95,11 +99,13 @@ export function formatResponseLine(
     statusText: string,
     durationMs: number,
     config: ResolvedConfig,
+    redirectedTo?: string,
 ): string {
   const p = palette(config.colors);
   const m = method.toUpperCase();
   const statusStr = p.bold(p.status(status)(`${status} ${statusText}`.trim()));
-  return `${p.arrowIn('←')} ${p.method(m)(m)} ${url} ${statusStr} ${p.dim(`(${durationMs}ms)`)}`;
+  const line = `${p.arrowIn('←')} ${p.method(m)(m)} ${url} ${statusStr} ${p.dim(`(${durationMs}ms)`)}`;
+  return redirectedTo ? `${line} ${p.dim(`(redirected to ${redirectedTo})`)}` : line;
 }
 
 export function formatHeaders(
