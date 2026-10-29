@@ -195,7 +195,7 @@ test('inspectInputType: type=password and sensitive autocomplete are masked, tex
     await page.locator(selector).fill(value);
     await new Promise((r) => setTimeout(r, 5));
     s.endCapture();
-    return { args: lastArgs(s), all: s.events().length };
+    return { args: lastArgs(s), all: s.events().filter((e) => e.kind === 'action').length };
   };
   assert.deepEqual((await run(['password', ''], '#f1', 'secret-value')).args, ['***']);
   assert.deepEqual((await run(['text', 'current-password'], '#f2', 'secret-value')).args, ['***']);

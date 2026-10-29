@@ -3,6 +3,8 @@
  * for the delegation patterns the real library has (page -> frame, locator ->
  * frame, and a delegation that happens after an await).
  */
+import { EventEmitter } from 'node:events';
+
 export const calls: string[] = [];
 
 export class FakeKeyboard {
@@ -87,7 +89,10 @@ export class FakeHandle {
   }
 }
 
-export class FakePage {
+export class FakePage extends EventEmitter {
+  url(): string {
+    return 'about:blank';
+  }
   keyboard = new FakeKeyboard();
   mouse = new FakeMouse();
   touchscreen = new FakeTouchscreen();
@@ -129,28 +134,13 @@ export class FakeBrowser {
   }
 }
 
-export class FakeContext {
-  private handlers = new Map<string, Array<(...a: unknown[]) => void>>();
+export class FakeContext extends EventEmitter {
   pagesList: FakePage[] = [];
   pages(): FakePage[] {
     return this.pagesList;
   }
   browser(): FakeBrowser | null {
     return null;
-  }
-  on(event: string, fn: (...a: unknown[]) => void): this {
-    this.handlers.set(event, [...(this.handlers.get(event) ?? []), fn]);
-    return this;
-  }
-  off(event: string, fn: (...a: unknown[]) => void): this {
-    this.handlers.set(event, (this.handlers.get(event) ?? []).filter((f) => f !== fn));
-    return this;
-  }
-  listenerCount(event: string): number {
-    return (this.handlers.get(event) ?? []).length;
-  }
-  emit(event: string, ...args: unknown[]): void {
-    for (const fn of this.handlers.get(event) ?? []) fn(...args);
   }
   async addCookies(_cookies?: unknown): Promise<void> {
     void _cookies;

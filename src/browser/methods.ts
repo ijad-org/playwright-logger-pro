@@ -25,7 +25,7 @@ export interface MethodSpec {
   /** Skip the call when Playwright's own fixtures make it (fixture setup / teardown). */
   runnerCheck?: boolean;
   /** Browser.newContext / newPage: attach the returned context / page to the active session. */
-  result?: 'context' | 'page';
+  result?: 'context' | 'page' | 'handle' | 'handles';
   /** Only recorded when `mouseMoves` is on. */
   noisy?: boolean;
 }
@@ -47,7 +47,9 @@ function selectorFirst(): Table {
     press: { category: 'action', selector: true, secret: { index: 1, kind: 'key' } },
     selectOption: { category: 'action', selector: true, secret: { index: 1, kind: 'options' } },
     setInputFiles: { category: 'action', selector: true, render: 'files' },
-    ...group('wait', 'waitForSelector', { selector: true }),
+    waitForSelector: { category: 'wait', selector: true, result: 'handle' },
+    $: { category: 'query', selector: true, result: 'handle' },
+    $$: { category: 'query', selector: true, result: 'handles' },
     ...group('query', 'textContent innerText innerHTML inputValue getAttribute isVisible isHidden isEnabled isDisabled isEditable isChecked', { selector: true }),
   };
 }
@@ -93,6 +95,7 @@ const LOCATOR: Table = {
   dragTo: { category: 'action' },
   ...group('action', 'evaluate evaluateAll evaluateHandle', { render: 'evaluate' }),
   waitFor: { category: 'wait' },
+  elementHandle: { category: 'query', result: 'handle' },
   ...group('query', 'textContent innerText innerHTML inputValue getAttribute isVisible isHidden isEnabled isDisabled isEditable isChecked count boundingBox allTextContents allInnerTexts ariaSnapshot all'),
 };
 LOCATOR.screenshot = { category: 'action', runnerCheck: true };
@@ -133,9 +136,30 @@ const BROWSER: Table = {
   newPage: { category: 'action', runnerCheck: true, result: 'page' },
 };
 
+// Created later (a dialog event, a download event, a returned handle); patched on first sight.
+const DIALOG: Table = {
+  accept: { category: 'action', secret: { index: 0, kind: 'text' } },
+  dismiss: { category: 'action' },
+};
+
+const DOWNLOAD: Table = {
+  saveAs: { category: 'action' },
+};
+
+const ELEMENT_HANDLE: Table = {
+  ...group('action', 'click dblclick tap check uncheck setChecked hover focus selectText scrollIntoViewIfNeeded screenshot dispatchEvent'),
+  fill: { category: 'action', secret: { index: 0, kind: 'value' } },
+  type: { category: 'action', secret: { index: 0, kind: 'text' } },
+  press: { category: 'action', secret: { index: 0, kind: 'key' } },
+  selectOption: { category: 'action', secret: { index: 0, kind: 'options' } },
+  setInputFiles: { category: 'action', render: 'files' },
+};
+ELEMENT_HANDLE.screenshot = { category: 'action', runnerCheck: true };
+
 export type TableTarget = Extract<
   ActionTarget,
-  'page' | 'frame' | 'locator' | 'keyboard' | 'mouse' | 'touchscreen' | 'clock' | 'context' | 'browser'
+  'page' | 'frame' | 'locator' | 'keyboard' | 'mouse' | 'touchscreen' | 'clock' | 'context' | 'browser' |
+  'dialog' | 'download' | 'elementHandle'
 >;
 
 export const METHOD_TABLES: Record<TableTarget, Table> = {
@@ -148,4 +172,7 @@ export const METHOD_TABLES: Record<TableTarget, Table> = {
   clock: CLOCK,
   context: CONTEXT,
   browser: BROWSER,
+  dialog: DIALOG,
+  download: DOWNLOAD,
+  elementHandle: ELEMENT_HANDLE,
 };
