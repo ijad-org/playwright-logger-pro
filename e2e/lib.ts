@@ -8,3 +8,4 @@ export const expect = mod.expect as typeof Src.expect;
 export const lib = (process.env.PLP_E2E_FROM === 'dist' ? require('../dist/index.js') : require('../src/index')) as
   typeof import('../src/index');
 export type { LoggerOptions } from '../src/fixtures';
+export type { BrowserLogHandle } from '../src/browser';
