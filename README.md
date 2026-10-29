@@ -9,13 +9,18 @@ Colorful request/response logging for Playwright's `APIRequestContext` — the s
     "price": 1
   }
 ← POST http://localhost:3000/vegetables 201 Created (23ms)
+  content-type: application/json
+  date: Thu, 29 Oct 2026 09:12:25 GMT
+  content-length: 43
   {"id":7,"msg":"Successfully added: Orange"}
 curl -X POST 'http://localhost:3000/vegetables' \
   -H 'Content-Type: application/json' \
   --data-raw '{"name":"Orange","price":1}'
 ```
 
-Methods and statuses are color-coded (GET cyan, POST green, DELETE red, … / 2xx green, 4xx yellow, 5xx red) when the output is a TTY.
+Request headers (when the call sets any) and response headers are printed before each body; turn them off with `logHeaders: false`.
+
+Methods and statuses are color-coded (GET cyan, POST green, DELETE red, … / 2xx green, 4xx yellow, 5xx red). Colors are on by default under `playwright test` (its workers set `FORCE_COLOR`) and on a TTY, and off with `NO_COLOR`; see the `colors` option.
 
 ## Install
 
@@ -25,7 +30,9 @@ npm i -D playwright-logger-pro
 pnpm add -D playwright-logger-pro
 ```
 
-`@playwright/test` >= 1.30 is a peer dependency — you already have it in a Playwright project.
+`@playwright/test` >= 1.30 is a peer dependency — you already have it in a Playwright project. Node.js >= 18 is required.
+
+TypeScript types resolve with every `moduleResolution` setting (`node`/`node10`, `node16`/`nodenext` and `bundler`).
 
 ## Usage
 
@@ -88,7 +95,7 @@ The wrapper is a transparent proxy: everything on `APIRequestContext` (including
 use: { apiLog: { curl: 'on-failure' } }
 ```
 
-**Force colors in CI logs** (output is piped, so TTY auto-detection turns colors off):
+**Force colors in CI logs** (for example with a custom `sink`, or when `NO_COLOR` is set). Locally `undefined` keeps auto-detection:
 
 ```ts
 use: { apiLog: { colors: !!process.env.CI || undefined } }
@@ -154,7 +161,20 @@ Some things to know about the output:
 
 - **Errors.** When a request fails without a response (timeout, connection refused, …), the wrapper logs a `✖ GET <url> failed (Nms) <error>` line. If `curl` is `true` or `'on-failure'`, the curl follows it. The error is then rethrown unchanged.
 - **Cookies in the curl.** Cookies from the context's cookie jar that match the URL are added to the curl as a `Cookie` header, which is redacted by default.
+- **Binary request bodies** (a `Buffer` as `data`) are logged as `<Buffer N bytes>`.
 - **Binary responses.** Responses with a non-text content type are logged as `<binary N bytes (type)>`. Control characters in text bodies (such as terminal escape sequences) are escaped, for example `\x1b`.
+
+## curl limitations
+
+The curl is meant to be pasted into a terminal to replay the request. Keep in mind:
+
+- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh`, and lines are continued with `\`. The command will not work as-is in PowerShell or `cmd.exe`.
+- **Redacted values are sent literally.** A masked header, query parameter or body key is sent as the text `***`. Put the real value back before replaying.
+- **Truncated bodies are incomplete.** When the request body is longer than `maxBodyLength`, the curl body is cut too, and the command starts with a `# request body truncated…` comment. Raise `maxBodyLength` to get a body that replays in full.
+- **Binary bodies are read from a file.** A `Buffer` body cannot be pasted into a shell, so the curl sends `--data-binary '@request-body.bin'` and starts with a `# binary request body (N bytes) is not included…` comment. Save the bytes as `request-body.bin` in the current directory first.
+- **Multipart files are read from disk.** File parts are sent with `-F 'name=@<file>'`. A file given as a path is read from that path. A file given as an in-memory buffer is read from its file name in the current directory, as the `# multipart file content…` comment says.
+- **Redirects.** A request that followed redirects gets `-L`, so curl follows them the same way.
+- **Context state.** Headers from the context (`extraHTTPHeaders`) appear only when the logger knows them (the fixture fills them in; Option B needs the `extraHTTPHeaders` option). Cookies come from the context's cookie jar. Other context settings, such as `httpCredentials`, proxy, client certificates and `ignoreHTTPSErrors`, are not part of the curl.
 
 ## Roadmap / Planned
 

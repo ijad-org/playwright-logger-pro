@@ -93,7 +93,6 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
   redactQueryParams: ['api_key', 'apikey', 'token', 'access_token', 'password', 'secret'],
   redactBodyKeys: [],
-  // eslint-disable-next-line no-console
   sink: (line: string) => console.log(line),
 };
 

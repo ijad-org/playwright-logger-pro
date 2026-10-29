@@ -66,10 +66,32 @@ export function redactHeaders(
   return out;
 }
 
+/**
+ * Split `text` after `max` characters, counting code points so a surrogate
+ * pair (emoji, ...) is never cut in half. `rest` is the number of
+ * characters dropped, or 0 when nothing was cut.
+ */
+export function splitChars(text: string, max: number): { head: string; rest: number } {
+  // A string never has more code points than UTF-16 units.
+  if (text.length <= max) return { head: text, rest: 0 };
+  let count = 0;
+  let cut = text.length;
+  for (let i = 0; i < text.length; i++) {
+    if (count === max) cut = i;
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) i++;
+    }
+    count++;
+  }
+  if (count <= max) return { head: text, rest: 0 };
+  return { head: text.slice(0, cut), rest: count - max };
+}
+
 export function truncateBody(body: string, maxLength: number): string {
-  if (body.length <= maxLength) return body;
-  const extra = body.length - maxLength;
-  return `${body.slice(0, maxLength)}... (${extra} more chars)`;
+  const { head, rest } = splitChars(body, maxLength);
+  return rest === 0 ? body : `${head}... (${rest} more chars)`;
 }
 
 /**

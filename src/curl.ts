@@ -1,5 +1,5 @@
 import type { RequestInfo } from './types';
-import { redactHeaders } from './format';
+import { redactHeaders, splitChars } from './format';
 import { multipartParts } from './multipart';
 import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
 
@@ -11,6 +11,9 @@ export interface CurlOptions {
   /** Truncate the request body (and each form/field value) beyond this many characters. */
   maxBodyLength?: number;
 }
+
+/** File a binary request body is read from when the curl is replayed. */
+const BINARY_BODY_FILE = 'request-body.bin';
 
 function shellQuote(value: string): string {
   // Single-quote for POSIX shells, escaping embedded single quotes.
@@ -59,9 +62,11 @@ export function buildCurl(
   const notes: string[] = [];
   const truncated: number[] = [];
   const limit = (value: string): string => {
-    if (maxBodyLength === undefined || value.length <= maxBodyLength) return value;
-    truncated.push(value.length);
-    return value.slice(0, maxBodyLength);
+    if (maxBodyLength === undefined) return value;
+    const { head, rest } = splitChars(value, maxBodyLength);
+    if (rest === 0) return value;
+    truncated.push(maxBodyLength + rest);
+    return head;
   };
   const redactedKeys = new Set(redactBodyKeys.map((k) => k.toLowerCase()));
 
@@ -97,12 +102,21 @@ export function buildCurl(
     if (typeof info.data === 'object' && !Buffer.isBuffer(info.data) && contentType === undefined) {
       lines.push(`-H ${shellQuote('Content-Type: application/json')}`);
     }
-    const body = Buffer.isBuffer(info.data) ?
-      '<binary body omitted>' :
-      (typeof info.data === 'string' ?
+    if (Buffer.isBuffer(info.data)) {
+      // The bytes cannot be pasted into a shell; read them from a file
+      // instead of sending a placeholder as the body.
+      if (contentType === undefined) {
+        lines.push(`-H ${shellQuote('Content-Type: application/octet-stream')}`);
+      }
+      lines.push(`--data-binary ${shellQuote(`@${BINARY_BODY_FILE}`)}`);
+      notes.push(`# binary request body (${info.data.length} bytes) is not included; ` +
+        `save it as ${BINARY_BODY_FILE} before replaying`);
+    } else {
+      const body = typeof info.data === 'string' ?
         redactBodyString(info.data, redactBodyKeys, contentType) :
-        JSON.stringify(redactBodyValue(info.data, redactBodyKeys)));
-    lines.push(`--data-raw ${shellQuote(limit(body))}`);
+        JSON.stringify(redactBodyValue(info.data, redactBodyKeys));
+      lines.push(`--data-raw ${shellQuote(limit(body))}`);
+    }
   }
 
   if (localFiles.length > 0) {

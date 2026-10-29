@@ -227,7 +227,7 @@ export function wrapRequestContext(
   }
 
   return new Proxy(context, {
-    get(target, prop, receiver) {
+    get(target, prop) {
       if (isHttpMethod(prop)) {
         return (url: string, options?: RequestOptions, ...rest: unknown[]) =>
           loggedCall(prop, String(url), options, [url, options, ...rest]);

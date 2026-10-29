@@ -1,7 +1,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -12,7 +12,9 @@ import { request, type APIRequestContext } from '@playwright/test';
 import ts from 'typescript';
 import { cookieHeaderFor } from '../src/cookies';
 import { buildCurl } from '../src/curl';
-import { describeResponseBody, formatBody, formatRequestLine } from '../src/format';
+import {
+  describeResponseBody, formatBody, formatRequestLine, splitChars, truncateBody,
+} from '../src/format';
 import { DEFAULT_CONFIG, detectColorSupport, resolveConfig } from '../src/types';
 import { wrapRequestContext } from '../src/wrapRequestContext';
 
@@ -24,6 +26,7 @@ interface Received {
   url: string;
   contentType: string;
   body: string;
+  bytes: Buffer;
   authorization?: string;
   cookie?: string;
 }
@@ -39,6 +42,7 @@ const server = http.createServer((req, res) => {
       url: req.url ?? '',
       contentType: req.headers['content-type'] ?? '',
       body: Buffer.concat(chunks).toString('utf8'),
+      bytes: Buffer.concat(chunks),
       authorization: req.headers.authorization,
       cookie: req.headers.cookie,
     });
@@ -61,6 +65,11 @@ const server = http.createServer((req, res) => {
     if (route.pathname === '/binary') {
       res.writeHead(200, { 'content-type': 'image/png' });
       res.end(Buffer.from('\x89PNG\x1b[31mRED\x00', 'latin1'));
+      return;
+    }
+    if (route.pathname === '/emoji') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('ab😀cd');
       return;
     }
     if (route.pathname === '/ansi') {
@@ -590,5 +599,124 @@ describe('PCL-14: fixtures subpath types resolve under every moduleResolution', 
         }
       }
     });
+  });
+});
+
+describe('PCL-12: truncation never splits emoji / surrogate pairs', () => {
+  test('PCL-12 truncateBody counts characters, not UTF-16 units', () => {
+    assert.equal(truncateBody('ab😀cd', 3), 'ab😀... (2 more chars)');
+    assert.equal(truncateBody('ab😀cd', 2), 'ab... (3 more chars)');
+    assert.equal(truncateBody('😀😀😀', 3), '😀😀😀');
+    assert.equal(truncateBody('😀😀😀', 0), '... (3 more chars)');
+    // A lone surrogate counts as one character and is kept as-is.
+    assert.equal(truncateBody('a\ud83db', 2), 'a\ud83d... (1 more chars)');
+    assert.deepEqual(splitChars('abc', 3), { head: 'abc', rest: 0 });
+  });
+
+  test('PCL-12 a truncated response body keeps the emoji whole', async () => {
+    const { api, lines } = logged({ curl: false, logHeaders: false, maxBodyLength: 3 });
+    await api.get('/emoji');
+    const log = lines.join('\n');
+    assert.match(log, /^ {2}ab😀\.\.\. \(2 more chars\)$/m);
+    assert.doesNotMatch(log, /\ufffd|[\ud800-\udbff](?![\udc00-\udfff])/);
+  });
+
+  test('PCL-12 the curl body is truncated on character boundaries too', () => {
+    const cmd = buildCurl({ method: 'post', url: 'http://x/y', data: 'ab😀cd' }, [], { maxBodyLength: 3 });
+    assert.match(cmd, /--data-raw 'ab😀'$/);
+    assert.match(cmd, /\(3 of 5 chars\)/);
+  });
+});
+
+describe('PCL-16: package metadata and lint tooling', () => {
+  const root = path.join(__dirname, '..');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+
+  test('PCL-16 engines, repository links and lint script are declared', () => {
+    assert.equal(pkg.engines?.node, '>=18');
+    const [major] = process.versions.node.split('.').map(Number);
+    assert.ok(major >= 18, 'tests run on a supported Node');
+    for (const url of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) {
+      assert.match(url, /github\.com\/ijad-org\/playwright-logger-pro\b/);
+    }
+    assert.match(pkg.scripts.lint, /^eslint\b/);
+    for (const dep of ['eslint', 'typescript-eslint']) {
+      assert.ok(pkg.devDependencies[dep], `${dep} is a devDependency`);
+    }
+    assert.ok(fs.existsSync(path.join(root, 'eslint.config.mjs')), 'flat config exists');
+  });
+});
+
+describe('PCL-17: README is accurate', () => {
+  const readmePath = path.join(__dirname, '..', 'README.md');
+
+  test('PCL-17 sample output matches what the logger prints', async () => {
+    const readme = await readFile(readmePath, 'utf8');
+    const sample = readme.split('```')[1].replace(/^\n/, '').trimEnd().split('\n');
+    const responseAt = sample.findIndex((l) => l.startsWith('← POST'));
+    // Response headers print by default, between the ← line and the body.
+    assert.match(sample[responseAt + 1], /^ {2}content-type: application\/json$/);
+    const curlAt = sample.findIndex((l) => l.startsWith('curl '));
+    assert.equal(
+        sample.slice(curlAt).join('\n'),
+        buildCurl({
+          method: 'post',
+          url: 'http://localhost:3000/vegetables',
+          data: { name: 'Orange', price: 1 },
+        }),
+    );
+
+    const { api, lines } = logged({ curl: false, logHeaders: false });
+    await api.post('/vegetables', { data: { name: 'Orange', price: 1 } });
+    // The → line and request body are logged exactly as shown.
+    assert.deepEqual(lines.slice(0, 2), [sample[0], sample.slice(1, responseAt).join('\n')]);
+  });
+
+  test('PCL-17 colors, versions and curl limitations are documented', async () => {
+    const readme = await readFile(readmePath, 'utf8');
+    assert.doesNotMatch(readme, /when the output is a TTY\./);
+    assert.match(readme, /Node\.js >= 18/);
+    assert.match(readme, /`moduleResolution`/);
+    const limits = readme.split('## curl limitations')[1]?.split('\n## ')[0];
+    assert.ok(limits, 'has a curl limitations section');
+    assert.match(limits, /POSIX shells only/);
+    assert.match(limits, /PowerShell/);
+    assert.match(limits, /sent as the text `\*\*\*`/);
+    assert.match(limits, /maxBodyLength/);
+    assert.match(limits, /--data-binary '@request-body\.bin'/);
+  });
+});
+
+describe('PCL-18: binary request bodies are not replaced by a placeholder in the curl', () => {
+  test('PCL-18 buildCurl reads the body from a file and notes it', () => {
+    const cmd = buildCurl({ method: 'post', url: 'http://x/y', data: Buffer.from([1, 2, 3, 4]) });
+    assert.doesNotMatch(cmd, /binary body omitted|--data-raw/);
+    assert.match(cmd, /^# binary request body \(4 bytes\) is not included; save it as request-body\.bin/);
+    assert.match(cmd, /-H 'Content-Type: application\/octet-stream' \\\n {2}--data-binary '@request-body\.bin'$/);
+    const typed = buildCurl({
+      method: 'put', url: 'http://x/y', headers: { 'content-type': 'image/png' }, data: Buffer.from([1]),
+    });
+    assert.doesNotMatch(typed, /octet-stream/);
+    assert.match(typed, /-H 'content-type: image\/png'/);
+  });
+
+  test('PCL-18 the curl replays the original bytes and content type', async () => {
+    const bytes = Buffer.from([0x00, 0x01, 0x42, 0x49, 0x4e, 0x7f, 0x0a]);
+    const { api, lines } = logged({ logHeaders: false });
+    received.length = 0;
+    await api.post('/echo', { data: bytes });
+    const original = received[0];
+    assert.deepEqual(original.bytes, bytes);
+
+    const curl = lines[lines.length - 1];
+    await withScratchDir(async (dir) => {
+      await writeFile(path.join(dir, 'request-body.bin'), bytes);
+      received.length = 0;
+      await runCurl(curl, dir);
+    });
+    const replay = received[0];
+    assert.equal(replay.method, 'POST');
+    assert.equal(replay.contentType, original.contentType);
+    assert.deepEqual(replay.bytes, bytes);
   });
 });
