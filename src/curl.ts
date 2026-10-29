@@ -2,6 +2,7 @@ import type { RedirectHop, RequestInfo } from './types';
 import { redactHeaders, splitChars } from './format';
 import { multipartParts } from './multipart';
 import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
+import { redirectRulesFor } from './playwrightVersion';
 
 export interface CurlOptions {
   /** Query parameter names whose values are masked in the URL. */
@@ -39,12 +40,18 @@ const BODY_HEADERS = [
   'content-encoding', 'content-language', 'content-length', 'content-location', 'content-type',
 ];
 
+/**
+ * `headers` without `names` (lower-case). With `exactCase` only a header
+ * spelled exactly like the name is removed, as older Playwrights do.
+ */
 function withoutHeaders(
     headers: Record<string, string> | undefined,
     names: readonly string[],
+    exactCase = false,
 ): Record<string, string> {
   return Object.fromEntries(
-      Object.entries(headers ?? {}).filter(([k]) => !names.includes(k.toLowerCase())),
+      Object.entries(headers ?? {})
+          .filter(([k]) => !names.includes(exactCase ? k : k.toLowerCase())),
   );
 }
 
@@ -61,8 +68,10 @@ function originOf(url: string): string | undefined {
  * `curl -L` cannot reproduce Playwright's redirect rules (a 303 turns any
  * method into a GET, a 301/302 turns a POST into a GET, while PUT/PATCH/DELETE
  * keep method and body on 301/302/307/308), so each step is spelled out. The
- * method of each step is the one Playwright actually used; the body and its
- * headers are only sent when the method was kept.
+ * method of each step is the one Playwright actually used; each step starts
+ * from the request of the step before it, so a body dropped by one redirect
+ * does not come back on a later 307/308. Which headers a redirect forwards
+ * depends on the Playwright version (see `redirectRulesFor`).
  */
 function buildRedirectSteps(
     info: RequestInfo,
@@ -75,19 +84,22 @@ function buildRedirectSteps(
     'cannot be replayed by a single curl, so there is one command per step',
     '# (cookies for the later steps come from the cookie jar and are not included)',
   ];
+  const rules = redirectRulesFor(info.playwrightVersion);
   let headers = info.headers;
+  let body = { data: info.data, form: info.form, multipart: info.multipart };
   let previous = { method: info.method.toUpperCase(), url: info.url };
   hops.forEach((hop, index) => {
     const method = index === 0 ? previous.method : hop.method.toUpperCase();
     const url = index === 0 ? info.url : hop.url;
-    let body = { data: info.data, form: info.form, multipart: info.multipart };
     if (index > 0) {
-      headers = withoutHeaders(headers, ['cookie']);
+      // The cookie jar's cookie is a lower-case `cookie` header inside Playwright.
+      if (info.cookieFromJar) headers = withoutHeaders(headers, ['Cookie'], true);
+      headers = withoutHeaders(headers, ['cookie'], rules.exactCaseRemoval);
       if (method !== previous.method) {
-        headers = withoutHeaders(headers, BODY_HEADERS);
+        headers = withoutHeaders(headers, BODY_HEADERS, rules.exactCaseRemoval);
         body = { data: undefined, form: undefined, multipart: undefined };
       }
-      if (originOf(url) !== originOf(previous.url)) {
+      if (rules.dropAuthorizationCrossOrigin && originOf(url) !== originOf(previous.url)) {
         headers = withoutHeaders(headers, ['authorization']);
       }
     }

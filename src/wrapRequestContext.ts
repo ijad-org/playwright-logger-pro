@@ -12,6 +12,7 @@ import {
   formatResponseLine,
 } from './format';
 import { describeMultipart } from './multipart';
+import { detectPlaywrightVersion } from './playwrightVersion';
 import { readRedirectChain } from './redirects';
 import { redactBodyString, redactBodyValue, redactUrl } from './redact';
 
@@ -177,6 +178,8 @@ export function wrapRequestContext(
         multipart: options?.multipart,
         followRedirects,
         redirects,
+        cookieFromJar: cookie !== undefined,
+        playwrightVersion: redirects ? detectPlaywrightVersion() : undefined,
       }, cfg.redactHeaders, {
         redactQueryParams: cfg.redactQueryParams,
         redactBodyKeys: cfg.redactBodyKeys,
