@@ -1,4 +1,4 @@
-import type { RequestInfo } from './types';
+import type { RedirectHop, RequestInfo } from './types';
 import { redactHeaders, splitChars } from './format';
 import { multipartParts } from './multipart';
 import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
@@ -25,28 +25,120 @@ function formValue(value: string): string {
   return /[;,"\\\s]/.test(value) ? `"${value.replace(/[\\"]/g, '\\$&')}"` : value;
 }
 
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Header names Playwright drops when a redirect turns the request into a GET. */
+const BODY_HEADERS = [
+  'content-encoding', 'content-language', 'content-length', 'content-location', 'content-type',
+];
+
+function withoutHeaders(
+    headers: Record<string, string> | undefined,
+    names: readonly string[],
+): Record<string, string> {
+  return Object.fromEntries(
+      Object.entries(headers ?? {}).filter(([k]) => !names.includes(k.toLowerCase())),
+  );
+}
+
+function originOf(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One curl per request Playwright sent while following redirects. A single
+ * `curl -L` cannot reproduce Playwright's redirect rules (a 303 turns any
+ * method into a GET, a 301/302 turns a POST into a GET, while PUT/PATCH/DELETE
+ * keep method and body on 301/302/307/308), so each step is spelled out. The
+ * method of each step is the one Playwright actually used; the body and its
+ * headers are only sent when the method was kept.
+ */
+function buildRedirectSteps(
+    info: RequestInfo,
+    hops: readonly RedirectHop[],
+    redact: readonly string[],
+    options: CurlOptions,
+): string {
+  const out = [
+    `# the request was redirected ${hops.length - 1} time(s). Playwright's redirect rules ` +
+    'cannot be replayed by a single curl, so there is one command per step',
+    '# (cookies for the later steps come from the cookie jar and are not included)',
+  ];
+  let headers = info.headers;
+  let previous = { method: info.method.toUpperCase(), url: info.url };
+  hops.forEach((hop, index) => {
+    const method = index === 0 ? previous.method : hop.method.toUpperCase();
+    const url = index === 0 ? info.url : hop.url;
+    let body = { data: info.data, form: info.form, multipart: info.multipart };
+    if (index > 0) {
+      headers = withoutHeaders(headers, ['cookie']);
+      if (method !== previous.method) {
+        headers = withoutHeaders(headers, BODY_HEADERS);
+        body = { data: undefined, form: undefined, multipart: undefined };
+      }
+      if (originOf(url) !== originOf(previous.url)) {
+        headers = withoutHeaders(headers, ['authorization']);
+      }
+    }
+    const status = hop.status === undefined ? '' : ` (response: ${hop.status})`;
+    out.push(`# step ${index + 1} of ${hops.length}${status}`);
+    out.push(buildCurl({
+      method, url, headers, ...body, followRedirects: false,
+    }, redact, options));
+    previous = { method, url };
+  });
+  return out.join('\n');
+}
+
 /**
  * Build a copy-pastable curl command equivalent to the given request.
  * Headers in `redact` (and query parameters / body keys per `options`) are
- * masked with *** so secrets never land in logs.
+ * masked with *** so secrets never land in logs. This is the low-level
+ * builder: the lists are used exactly as given (the defaults are merged in
+ * by resolveConfig(), not here).
+ *
+ * A request that followed redirects is replayed with `-L` when curl follows
+ * them like Playwright does (GET/HEAD, or a POST with a body). Otherwise, when
+ * `info.redirects` lists the hops Playwright took, one command per hop is
+ * returned; without it no `-L` is added and a comment says so.
  */
 export function buildCurl(
     info: RequestInfo,
-    redact: string[] = [],
+    redact: readonly string[] = [],
     options: CurlOptions = {},
 ): string {
+  if (!isValidUrl(info.url)) return '# could not build curl: invalid URL';
   const { redactQueryParams = [], redactBodyKeys = [], maxBodyLength } = options;
   const method = info.method.toUpperCase();
   const parts = multipartParts(info.multipart, redactBodyKeys);
   const hasBody = (parts !== undefined && parts.length > 0) ||
     (info.form !== undefined && Object.keys(info.form).length > 0) ||
     (info.data !== undefined && info.data !== null);
+  const plainRead = (method === 'GET' || method === 'HEAD') && !hasBody;
+  if (info.followRedirects && info.redirects && info.redirects.length > 1 && !plainRead) {
+    return buildRedirectSteps(info, info.redirects, redact, options);
+  }
+  // Without the hops, `-L` is only right where curl follows redirects the way
+  // Playwright does: a bodiless GET/HEAD, or a POST with a body (-d implies
+  // POST, which curl turns into a GET on 301/302/303 and keeps on 307/308).
+  const follow = Boolean(info.followRedirects) && (plainRead || (method === 'POST' && hasBody));
   // When following redirects, let a body imply POST instead of forcing it
   // with -X: curl then switches to GET on 301/302/303 like Playwright does,
   // rather than re-POSTing the body to the redirect target.
   // A body alone would make curl send POST, so GET with a body needs -X GET.
   const impliedMethod = (method === 'GET' && !hasBody) ||
-    (info.followRedirects && method === 'POST' && hasBody);
+    (follow && method === 'POST' && hasBody);
   const methodFlag = method === 'HEAD' ?
     // -X HEAD makes curl wait for a response body that never comes.
     '--head' :
@@ -54,7 +146,7 @@ export function buildCurl(
   const head = [
     'curl',
     ...(methodFlag ? [methodFlag] : []),
-    ...(info.followRedirects ? ['-L'] : []),
+    ...(follow ? ['-L'] : []),
     shellQuote(redactUrl(info.url, redactQueryParams)),
   ].join(' ');
   const lines: string[] = [head];
@@ -119,6 +211,10 @@ export function buildCurl(
     }
   }
 
+  if (info.followRedirects && !follow) {
+    notes.push(`# the request was redirected; ${method} is not followed with -L because curl would ` +
+      "not apply Playwright's redirect rules. Send the redirect target yourself");
+  }
   if (localFiles.length > 0) {
     notes.push(`# multipart file content is read from local file(s): ${localFiles.join(', ')}`);
   }

@@ -236,8 +236,10 @@ describe('PCL-03: redirects log and curl the original request', () => {
     );
 
     const curl = lines[lines.length - 1];
-    assert.match(curl, new RegExp(`^curl -L '${baseURL}/redirect'`));
+    // POST + 302 becomes a GET: one curl per step.
+    assert.match(curl, new RegExp(`^curl -X POST '${baseURL}/redirect'`, 'm'));
     assert.match(curl, /--data-raw '\{"a":1\}'/);
+    assert.match(curl, new RegExp(`^curl '${baseURL}/echo\\?redirected=1'`, 'm'));
 
     received.length = 0;
     await withScratchDir((dir) => runCurl(curl, dir));
@@ -250,7 +252,7 @@ describe('PCL-03: redirects log and curl the original request', () => {
     const { api, lines } = logged();
     await api.put('/redirect', { params: { q: 'a b' }, data: 'x' });
     const curl = lines[lines.length - 1];
-    assert.match(curl, new RegExp(`^curl -X PUT -L '${baseURL}/redirect\\?q=a\\+b'`));
+    assert.match(curl, new RegExp(`^curl -X PUT '${baseURL}/redirect\\?q=a\\+b'`, 'm'));
     assert.ok(lines.some((l) => l.includes(`(redirected to ${baseURL}/echo?redirected=1)`)));
   });
 
@@ -318,7 +320,7 @@ describe('PCL-05: options explicitly set to undefined fall back to their default
       'enabled', 'curl', 'logHeaders', 'logBody', 'maxBodyLength', 'redactHeaders',
       'redactQueryParams', 'redactBodyKeys', 'sink',
     ] as const) {
-      assert.equal(cfg[key], DEFAULT_CONFIG[key], key);
+      assert.deepEqual(cfg[key], DEFAULT_CONFIG[key], key);
     }
     assert.equal(formatBody('abc', resolveConfig({ colors: false, maxBodyLength: undefined })), '  abc');
   });
@@ -448,7 +450,7 @@ describe('PCL-09: context headers and cookies are reflected in logs and curl', (
       // Without redaction the replay sends what the original request sent.
       const raw: string[] = [];
       const unredacted = wrapRequestContext(own, {
-        colors: false, curl: true, baseURL, extraHTTPHeaders, redactHeaders: [], sink: (l) => raw.push(l),
+        colors: false, curl: true, baseURL, extraHTTPHeaders, redactHeaders: [], replaceDefaultRedaction: true, sink: (l) => raw.push(l),
       });
       received.length = 0;
       await unredacted.get('/echo');
