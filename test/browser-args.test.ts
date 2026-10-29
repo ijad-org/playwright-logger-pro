@@ -8,7 +8,7 @@ import { BrowserLogSession } from '../src/browser/session';
 import { resolveBrowserConfig } from '../src/browser/types';
 import type { BrowserLoggerConfig } from '../src/browser/types';
 import { getRegistry } from '../src/browser/registry';
-import { FakePage } from './helpers/fakes';
+import { FakeContext, FakeLocator, FakePage } from './helpers/fakes';
 
 const red = resolveBrowserConfig({ redact: { values: ['PLP-CANARY-7f3a'] } }).redact;
 const ctx = (over: Partial<ArgsContext> = {}): ArgsContext => ({ redact: red, maxArgLength: 200, maskSecret: false, ...over });
@@ -186,4 +186,41 @@ test('errors never echo a masked secret', async () => {
   assert.ok(ev?.kind === 'action' && ev.error);
   assert.ok(!JSON.stringify(ev).includes('hunter2hunter2'));
   assert.match(JSON.stringify(ev), /fill\(\\"\*\*\*\\"\)/);
+});
+
+test('inspectInputType: type=password and sensitive autocomplete are masked, text fields are not; the probe is not logged', async () => {
+  const run = async (probe: string[] | Error, selector: string, value: string): Promise<{ args: string[]; all: number }> => {
+    FakeLocator.probeResult = probe;
+    const { s, page } = sessionFor({ redact: { inspectInputType: true } });
+    await page.locator(selector).fill(value);
+    await new Promise((r) => setTimeout(r, 5));
+    s.endCapture();
+    return { args: lastArgs(s), all: s.events().length };
+  };
+  assert.deepEqual((await run(['password', ''], '#f1', 'secret-value')).args, ['***']);
+  assert.deepEqual((await run(['text', 'current-password'], '#f2', 'secret-value')).args, ['***']);
+  assert.deepEqual((await run(['text', 'cc-number'], '#f3', 'secret-value')).args, ['***']);
+  const plain = await run(['text', ''], '#f4', 'plain-value');
+  assert.deepEqual(plain.args, ["'plain-value'"]);
+  assert.equal(plain.all, 1, 'only the fill is recorded, not the evaluate probe');
+  assert.deepEqual((await run(new Error('probe failed'), '#f5', 'secret-value')).args, ['***'], 'fails closed');
+});
+
+test('inspectInputType off (default): no probe round trip happens', async () => {
+  FakeLocator.probeResult = new Error('must not be called');
+  const { s, page } = sessionFor();
+  await page.locator('#f6').fill('plain-value');
+  assert.deepEqual(lastArgs(s), ["'plain-value'"]);
+});
+
+test('secrets learned at runtime (cookies, credentials, sensitive headers) are masked afterwards', async () => {
+  getRegistry().activeSession = null;
+  const s = new BrowserLogSession(resolveBrowserConfig({ colors: false, print: false }), {}, false);
+  const ctx = new FakeContext();
+  s.attachContext(ctx);
+  await ctx.addCookies([{ name: "sid", value: "cookie-secret-77" }]);
+  assert.equal(s.scrub('value cookie-secret-77 here'), 'value *** here');
+  s.note('again cookie-secret-77');
+  const note = s.events().at(-1);
+  assert.equal(note?.kind === 'note' && note.message, 'again ***');
 });

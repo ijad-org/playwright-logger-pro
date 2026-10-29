@@ -1,6 +1,7 @@
 import { warnOnce } from '../warn';
 import { matchesAny, normalizeSecretValues, redactText } from '../redact';
-import { renderArgs } from './args';
+import { isPrintableKey, renderArgs } from './args';
+import type { RenderedArgs } from './args';
 import { describeFrame, describeLocator } from './describe';
 import { installContextPrototypes, installPagePrototypes } from './install';
 import { attachContextListeners, attachPageListeners } from './listeners';
@@ -48,7 +49,18 @@ interface Pending {
   page?: number;
   step?: string[];
   location?: { file: string; line: number; column: number };
+  /** Re-render the arguments with the secret masked (or not). Dropped once the call is decided. */
+  rerender?: (mask: boolean) => RenderedArgs;
+  /** inspectInputType: the DOM probe that decides whether the typed value was a secret. */
+  probe?: { page: object | undefined; selector: string; locator: () => unknown };
 }
+
+/** Evaluated in the page by the inspectInputType probe. */
+const PROBE_FN = (el: unknown): [string, string] => {
+  const e = el as { type?: unknown; autocomplete?: unknown };
+  return [String(e.type ?? ''), String(e.autocomplete ?? '')];
+};
+const SENSITIVE_AUTOCOMPLETE = /current-password|new-password|one-time-code|cc-number|cc-csc/i;
 
 const now = (): number => performance.now();
 
@@ -106,6 +118,8 @@ export class BrowserLogSession implements ActionSink {
   private readonly pageIds = new WeakMap<object, number>();
   private pageCount = 0;
   private readonly sensitiveFocus = new WeakMap<object, boolean>();
+  /** inspectInputType results per page and target description; cleared on navigation. */
+  private probeCache = new WeakMap<object, Map<string, boolean>>();
   private readonly trackedPages = new Set<object>();
   private readonly trackedContexts = new Set<object>();
   private readonly disposers: Array<() => void> = [];
@@ -350,19 +364,32 @@ export class BrowserLogSession implements ActionSink {
       else if (selector !== undefined && spec.category === 'action') this.sensitiveFocus.set(page, sensitiveSelector);
     }
 
+    this.learnSecrets(spec, args);
+    if (page && spec.category === 'navigation') this.probeCache.delete(page);
+
     if (!this.wants(spec)) return undefined;
     if (spec.runnerCheck && calledFromRunner()) return undefined;
 
     let maskSecret = false;
+    let needsProbe = false;
     if (spec.secret) {
       const mode = this.red.fillValues;
       if (mode === 'always') maskSecret = true;
       else if (mode === 'auto') {
         maskSecret = selector !== undefined ? sensitiveSelector : (page ? this.sensitiveFocus.get(page) === true : false);
+        if (!maskSecret && selector !== undefined && this.red.inspectInputType && page &&
+          (target === 'locator' || target === 'page' || target === 'frame') &&
+          (spec.secret.kind !== 'key' || (typeof args[spec.secret.index] === 'string' && isPrintableKey(args[spec.secret.index] as string)))) {
+          const cached = this.probeCache.get(page)?.get(selector);
+          if (cached === undefined) needsProbe = true;
+          else maskSecret = cached;
+        }
       }
     }
 
-    const rendered = renderArgs(spec, args, { redact: this.red, maxArgLength: this.cfg.maxArgLength, maskSecret });
+    const ctx = { redact: this.red, maxArgLength: this.cfg.maxArgLength, maskSecret };
+    // An undecided call is rendered masked (fail closed) until the probe says otherwise.
+    const rendered = renderArgs(spec, args, needsProbe ? { ...ctx, maskSecret: true } : ctx);
     const t = now();
     const store = getRegistry().als.getStore();
     const pageId = this.pageCount > 1 && page && this.pageIds.has(page) ? this.pageIds.get(page) : undefined;
@@ -382,6 +409,17 @@ export class BrowserLogSession implements ActionSink {
       step: store?.step && store.step.length > 0 ? store.step : undefined,
       location: this.cfg.location ? callSite(getRegistry().libDirs) : undefined,
     };
+    if (needsProbe && selector !== undefined) {
+      const sel = selector;
+      rec.probe = {
+        page,
+        selector: sel,
+        locator: () => (target === 'locator' ? self : (self as { locator(s: string): unknown }).locator(sel)),
+      };
+      rec.rerender = (mask) => renderArgs(spec, args, { ...ctx, maskSecret: mask });
+      // Until the probe has run, keyboard input that follows is treated as sensitive too.
+      if (page) this.sensitiveFocus.set(page, true);
+    }
     this.pending.set(rec.seq, rec);
     if (this.cfg.logStart && this.live) {
       this.print(renderBrowserEventText(this.actionEvent(rec, 'pending', now()), { colors: this.cfg.colors }).replace(/still pending after \d+ms/, 'started'));
@@ -419,8 +457,78 @@ export class BrowserLogSession implements ActionSink {
   endAction(handle: ActionRecord, error?: unknown): void {
     const rec = this.pending.get(handle.seq);
     if (!rec) return; // already flushed as pending
+    if (rec.probe) {
+      if (error !== undefined) {
+        // The call failed, so there is nothing to inspect: the value stays masked.
+        this.settle(rec, rec.rerender ? rec.rerender(true) : undefined, error);
+      } else {
+        this.runProbe(rec);
+      }
+      return;
+    }
     this.pending.delete(handle.seq);
     this.push(this.actionEvent(rec, error === undefined ? 'ok' : 'error', now(), error), true);
+  }
+
+  private settle(rec: Pending, args: RenderedArgs | undefined, error?: unknown): void {
+    if (!this.pending.delete(rec.seq)) return;
+    if (args) {
+      rec.args = args.text;
+      rec.redacted = args.redacted;
+      rec.secrets = args.secrets;
+    }
+    rec.rerender = undefined;
+    rec.probe = undefined;
+    this.push(this.actionEvent(rec, error === undefined ? 'ok' : 'error', now(), error), true);
+  }
+
+  /** inspectInputType: ask the page whether the field the value went into is a password field. */
+  private runProbe(rec: Pending): void {
+    const probe = rec.probe;
+    if (!probe) return;
+    const decide = (sensitive: boolean): void => {
+      if (probe.page) {
+        let cache = this.probeCache.get(probe.page);
+        if (!cache) this.probeCache.set(probe.page, (cache = new Map()));
+        cache.set(probe.selector, sensitive);
+        this.sensitiveFocus.set(probe.page, sensitive);
+      }
+      this.settle(rec, rec.rerender ? rec.rerender(sensitive) : undefined);
+    };
+    try {
+      const locator = probe.locator() as { first(): { evaluate(fn: unknown, arg?: unknown, options?: unknown): Promise<unknown> } };
+      // Run inside our own zone so the probe is not logged as an action.
+      const result = getRegistry().als.run({ inAction: true }, () =>
+        locator.first().evaluate(PROBE_FN, undefined, { timeout: 1000 }));
+      Promise.resolve(result).then(
+          (value) => {
+            const [type = '', autocomplete = ''] = Array.isArray(value) ? (value as string[]) : [];
+            decide(type.toLowerCase() === 'password' || SENSITIVE_AUTOCOMPLETE.test(autocomplete));
+          },
+          () => decide(true),
+      );
+    } catch {
+      decide(true);
+    }
+  }
+
+  /** Mask values that Playwright options are about to carry (cookies, auth headers, credentials). */
+  private learnSecrets(spec: MethodSpec, args: unknown[]): void {
+    try {
+      const first = args[0];
+      if (spec.render === 'headers' && first !== null && typeof first === 'object') {
+        const names = new Set(this.red.headers.map((h) => h.toLowerCase()));
+        for (const [name, value] of Object.entries(first as Record<string, unknown>)) {
+          if (names.has(name.toLowerCase())) this.addSecret(value);
+        }
+      } else if (spec.render === 'cookies' && Array.isArray(first)) {
+        for (const cookie of first) this.addSecret((cookie as { value?: unknown } | null)?.value);
+      } else if (spec.render === 'credentials' && first !== null && typeof first === 'object') {
+        this.addSecret((first as { password?: unknown }).password);
+      }
+    } catch {
+      // never fail a call because of logging
+    }
   }
 
   /** Emit every unresolved action as `pending` (a test that timed out). */
@@ -428,7 +536,17 @@ export class BrowserLogSession implements ActionSink {
     const left = [...this.pending.values()].sort((a, b) => a.seq - b.seq);
     this.pending.clear();
     const end = now();
-    for (const rec of left) this.push(this.actionEvent(rec, 'pending', end), true);
+    for (const rec of left) {
+      if (rec.rerender) {
+        const masked = rec.rerender(true);
+        rec.args = masked.text;
+        rec.redacted = masked.redacted;
+        rec.secrets = masked.secrets;
+        rec.rerender = undefined;
+        rec.probe = undefined;
+      }
+      this.push(this.actionEvent(rec, 'pending', end), true);
+    }
   }
 
   /** Stop recording (Playwright's own fixture teardown follows). */

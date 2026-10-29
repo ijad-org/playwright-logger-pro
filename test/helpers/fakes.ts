@@ -69,6 +69,15 @@ export class FakeLocator {
   async textContent(): Promise<string> {
     return 'text';
   }
+  first(): FakeLocator {
+    return this;
+  }
+  /** Set by tests: what the inspectInputType probe finds in the DOM. */
+  static probeResult: Array<string> | Error = ['text', ''];
+  async evaluate(): Promise<unknown> {
+    if (FakeLocator.probeResult instanceof Error) throw FakeLocator.probeResult;
+    return FakeLocator.probeResult;
+  }
 }
 
 export class FakeHandle {
@@ -143,5 +152,7 @@ export class FakeContext {
   emit(event: string, ...args: unknown[]): void {
     for (const fn of this.handlers.get(event) ?? []) fn(...args);
   }
-  async addCookies(): Promise<void> {}
+  async addCookies(_cookies?: unknown): Promise<void> {
+    void _cookies;
+  }
 }
