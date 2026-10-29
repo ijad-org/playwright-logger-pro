@@ -1,9 +1,10 @@
 import { warnOnce } from '../warn';
 import { matchesAny, normalizeSecretValues, redactText } from '../redact';
+import { splitChars } from '../format';
 import { isPrintableKey, renderArgs } from './args';
 import type { RenderedArgs } from './args';
-import { describeFrame, describeLocator } from './describe';
-import { installContextPrototypes, installPagePrototypes } from './install';
+import { describeFrame, describeLocator, quote } from './describe';
+import { installContextPrototypes, installElementHandlePrototype, installPagePrototypes } from './install';
 import { attachContextListeners, attachPageListeners } from './listeners';
 import { getRegistry } from './registry';
 import type { ActionRecord, ActionSink, BeginInput, Binding } from './registry';
@@ -47,6 +48,9 @@ interface Pending {
   redacted: boolean;
   secrets: string[];
   page?: number;
+  pageObj?: object;
+  /** goto(url): the requested URL, so the navigation it causes is not logged twice. */
+  navUrl?: string;
   step?: string[];
   location?: { file: string; line: number; column: number };
   /** Re-render the arguments with the secret masked (or not). Dropped once the call is decided. */
@@ -118,6 +122,9 @@ export class BrowserLogSession implements ActionSink {
   private readonly pageIds = new WeakMap<object, number>();
   private pageCount = 0;
   private readonly sensitiveFocus = new WeakMap<object, boolean>();
+  private readonly openers = new WeakMap<object, object>();
+  private readonly lastNav = new WeakMap<object, string>();
+  private readonly handleDescriptions = new WeakMap<object, string>();
   /** inspectInputType results per page and target description; cleared on navigation. */
   private probeCache = new WeakMap<object, Map<string, boolean>>();
   private readonly trackedPages = new Set<object>();
@@ -305,10 +312,62 @@ export class BrowserLogSession implements ActionSink {
     this.disposers.push(attachPageListeners(this, page, popup));
   }
 
-  onResult(kind: 'context' | 'page', value: unknown): void {
+  onResult(kind: 'context' | 'page' | 'handle' | 'handles', value: unknown, self: object, args: unknown[]): void {
     if (value === null || typeof value !== 'object') return;
     if (kind === 'context') this.attachContext(value);
-    else this.attachPage(value);
+    else if (kind === 'page') this.attachPage(value);
+    else {
+      const handles = kind === 'handles' ? (Array.isArray(value) ? value : []) : [value];
+      if (handles.length === 0) return;
+      let page: object | undefined;
+      try {
+        page = typeof (self as { page?: unknown }).page === 'function' ? (self as { page(): object }).page() : self;
+      } catch {
+        page = undefined;
+      }
+      if (!page) return;
+      const from = typeof args[0] === 'string' ? args[0] : describeLocator(self);
+      for (const handle of handles as object[]) {
+        getRegistry().ownerOf.set(handle, page);
+        this.handleDescriptions.set(handle, from);
+      }
+      installElementHandlePrototype(handles[0] as object);
+    }
+  }
+
+  values(): readonly string[] {
+    return this.red.values;
+  }
+
+  /** Cut free text (console messages, page errors) to `maxArgLength`. */
+  truncate(text: string): string {
+    const { head, rest } = splitChars(text, this.cfg.maxArgLength);
+    return rest > 0 ? `${head}…(+${rest})` : head;
+  }
+
+  hasPage(page: object): boolean {
+    return this.trackedPages.has(page);
+  }
+
+  setOpener(child: object, opener: object): void {
+    this.openers.set(child, opener);
+  }
+
+  openerOf(page: object): object | undefined {
+    return this.openers.get(page);
+  }
+
+  /** A main-frame navigation happened. */
+  onNavigated(page: object, url: string): void {
+    // A new document: the focused field is unknown again, and probe answers may no longer hold.
+    this.sensitiveFocus.set(page, false);
+    this.probeCache.delete(page);
+    if (this.lastNav.get(page) === url) return;
+    this.lastNav.set(page, url);
+    for (const rec of this.pending.values()) {
+      if (rec.pageObj === page && rec.navUrl !== undefined && (url === rec.navUrl || url.endsWith(rec.navUrl))) return;
+    }
+    this.emit({ kind: 'navigation', url }, page);
   }
 
   // -- actions --------------------------------------------------------------
@@ -336,7 +395,9 @@ export class BrowserLogSession implements ActionSink {
         } catch {
           return undefined;
         }
-      case 'keyboard': case 'mouse': case 'touchscreen': case 'clock': return reg.ownerOf.get(self);
+      case 'keyboard': case 'mouse': case 'touchscreen': case 'clock':
+      case 'dialog': case 'download': case 'elementHandle':
+        return reg.ownerOf.get(self);
       default: return undefined;
     }
   }
@@ -356,12 +417,31 @@ export class BrowserLogSession implements ActionSink {
       if (spec.selector && typeof args[0] === 'string') selector = args[0];
     } else if (target === 'page' && spec.selector && typeof args[0] === 'string') {
       selector = args[0];
+    } else if (target === 'dialog') {
+      try {
+        const d = self as { type(): string; message(): string };
+        selector = d.message();
+        subject = `dialog(${d.type()} ${quote(this.scrub(splitChars(selector, 40).head))})`;
+      } catch {
+        subject = 'dialog';
+      }
+    } else if (target === 'download') {
+      try {
+        subject = `download(${quote(this.scrub((self as { suggestedFilename(): string }).suggestedFilename()))})`;
+      } catch {
+        subject = 'download';
+      }
+    } else if (target === 'elementHandle') {
+      subject = `handle(${this.handleDescriptions.get(self) ?? '?'})`;
+      selector = this.handleDescriptions.get(self);
     }
 
     const sensitiveSelector = selector !== undefined && matchesAny(selector, this.red.selectors);
     if (page) {
       if (spec.category === 'navigation') this.sensitiveFocus.set(page, false);
-      else if (selector !== undefined && spec.category === 'action') this.sensitiveFocus.set(page, sensitiveSelector);
+      else if (selector !== undefined && spec.category === 'action' && (target === 'locator' || target === 'page' || target === 'frame')) {
+        this.sensitiveFocus.set(page, sensitiveSelector);
+      }
     }
 
     this.learnSecrets(spec, args);
@@ -406,6 +486,8 @@ export class BrowserLogSession implements ActionSink {
       redacted: rendered.redacted,
       secrets: rendered.secrets,
       page: pageId,
+      pageObj: page,
+      navUrl: spec.render === 'url' && method === 'goto' && typeof args[0] === 'string' ? args[0] : undefined,
       step: store?.step && store.step.length > 0 ? store.step : undefined,
       location: this.cfg.location ? callSite(getRegistry().libDirs) : undefined,
     };

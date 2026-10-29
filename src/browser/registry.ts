@@ -34,7 +34,7 @@ export interface ActionSink {
   beginAction(input: BeginInput): ActionRecord | undefined;
   endAction(rec: ActionRecord, error?: unknown): void;
   /** The resolved value of a patched call that creates a context / page (attach it). */
-  onResult(kind: 'context' | 'page', value: unknown): void;
+  onResult(kind: 'context' | 'page' | 'handle' | 'handles', value: unknown, self: object, args: unknown[]): void;
   /** Called when the logger itself fails; capture stops for the session. */
   fail(error: unknown): void;
 }
@@ -50,7 +50,7 @@ export interface Registry {
   als: AsyncLocalStorage<Store>;
   pages: WeakMap<object, Binding>;
   contexts: WeakMap<object, Binding>;
-  /** keyboard / mouse / touchscreen / clock -> owning Page */
+  /** keyboard / mouse / touchscreen / clock / dialog / download / element handle -> owning Page */
   ownerOf: WeakMap<object, object>;
   activeSession: ActionSink | null;
   /** Prototypes already patched. */

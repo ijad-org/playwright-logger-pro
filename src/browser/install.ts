@@ -39,7 +39,10 @@ function resolveBinding(reg: Registry, self: object, target: TableTarget): Bindi
     case 'keyboard':
     case 'mouse':
     case 'touchscreen':
-    case 'clock': {
+    case 'clock':
+    case 'dialog':
+    case 'download':
+    case 'elementHandle': {
       const owner = reg.ownerOf.get(self);
       return owner ? reg.pages.get(owner) : undefined;
     }
@@ -93,7 +96,7 @@ function patchMethod(proto: object, name: string, target: TableTarget, spec: Met
       }
       const done = (value: unknown, error?: unknown, failed = false): void => {
         safe(sink, () => {
-          if (!failed && spec.result) sink.onResult(spec.result, value);
+          if (!failed && spec.result) sink.onResult(spec.result, value, this, args);
           if (rec) sink.endAction(rec, failed ? (error ?? new Error('rejected')) : undefined);
         });
       };
@@ -163,6 +166,17 @@ export function installContextPrototypes(context: object): void {
 
 function installBrowserPrototype(browserProto: unknown): void {
   patchPrototype(browserProto, 'browser');
+}
+
+/** Dialog, Download and ElementHandle prototypes are patched the first time an instance is seen. */
+export function installDialogPrototype(dialog: object): void {
+  patchPrototype(Object.getPrototypeOf(dialog), 'dialog');
+}
+export function installDownloadPrototype(download: object): void {
+  patchPrototype(Object.getPrototypeOf(download), 'download');
+}
+export function installElementHandlePrototype(handle: object): void {
+  patchPrototype(Object.getPrototypeOf(handle), 'elementHandle');
 }
 
 /** Called from the worker-scoped `browser` fixture: browser.newContext / newPage auto-attach. */
