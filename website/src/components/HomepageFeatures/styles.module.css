@@ -1,0 +1,48 @@
+.features {
+  padding: 3rem 0 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 0.9rem;
+  background: var(--plp-surface);
+}
+
+.card p {
+  flex: 1;
+}
+
+.glyph {
+  align-self: flex-start;
+  margin-bottom: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 0.5rem;
+  background: var(--ifm-color-primary-contrast-background);
+  color: var(--ifm-color-primary-contrast-foreground);
+  font-family: var(--ifm-font-family-monospace);
+  font-weight: 700;
+}
+
+.cardTitle {
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+}
+
+.more {
+  font-weight: 600;
+}
+
+@media (max-width: 996px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,0 +1,17 @@
+[34m→[39m [1m[32mPOST[39m[22m /api/session?api_key=***&q=shoes
+  [2mAuthorization:[22m ***
+  {
+    "user": "jo",
+    "password": "***"
+  }
+[34m←[39m [32mPOST[39m http://localhost:3000/api/session?api_key=***&q=shoes [1m[33m401 Unauthorized[39m[22m [2m(3ms)[22m
+  [2mcontent-type:[22m application/json
+  [2mdate:[22m Thu, 29 Oct 2026 09:12:25 GMT
+  [2mconnection:[22m keep-alive
+  [2mkeep-alive:[22m timeout=5
+  [2mtransfer-encoding:[22m chunked
+  {"error":"invalid credentials"}
+curl -X POST 'http://localhost:3000/api/session?api_key=***&q=shoes' \
+  -H 'Authorization: ***' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"user":"jo","password":"***"}'

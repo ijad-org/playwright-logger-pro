@@ -1,0 +1,122 @@
+---
+title: Migration from playwright-colorful-logger
+sidebar_label: Migration from playwright-colorful-logger
+description: Moving from playwright-colorful-logger to playwright-logger-pro, and the behaviour changes between versions.
+---
+
+# Migration from playwright-colorful-logger
+
+`playwright-colorful-logger` was renamed to **`playwright-logger-pro`**. Every version of the old package is deprecated on npm with a pointer to the new name, and no new versions of it will be published. The `apiLog` option key and the types are unchanged, so migrating is mostly a rename.
+
+:::info Versions at a glance
+- `playwright-colorful-logger@0.1.0`: the original package. API logging only.
+- `playwright-logger-pro@0.1.0`: the renamed package, API logging only, with the fixes described in [Behaviour changes](#behaviour-changes-from-playwright-colorful-logger).
+- `playwright-logger-pro@0.2.0` (this documentation): adds browser logging. See [From 0.1 to 0.2](#from-01-to-02).
+:::
+
+## Why the rename
+
+The package now logs more than API requests: it records what a test does in the browser as well. The new name says what it is, and the old name stays deprecated so existing installs keep working and tell you where to go.
+
+## Steps
+
+### 1. Swap the dependency
+
+```bash npm2yarn
+npm uninstall playwright-colorful-logger
+npm install --save-dev playwright-logger-pro
+```
+
+`@playwright/test` 1.30 or newer and Node.js 18 or newer are required, as before for Playwright, and new for Node.
+
+### 2. Replace the package name in your imports
+
+The subpaths are the same (`/fixtures`), so only the package name changes.
+
+<Tabs groupId="os">
+<TabItem value="posix" label="macOS / Linux" default>
+
+```sh
+grep -rl "playwright-colorful-logger" --include='*.ts' --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.json' . \
+  --exclude-dir=node_modules | xargs sed -i.bak 's/playwright-colorful-logger/playwright-logger-pro/g'
+# review with git diff, then remove the backups:
+find . -name '*.bak' -not -path './node_modules/*' -delete
+```
+
+On macOS, `sed -i.bak` works as written. On GNU/Linux it does too.
+
+</TabItem>
+<TabItem value="powershell" label="Windows (PowerShell)">
+
+```powershell
+Get-ChildItem -Recurse -Include *.ts,*.js,*.mjs,*.cjs,*.json -File |
+  Where-Object { $_.FullName -notmatch '\\node_modules\\' } |
+  ForEach-Object {
+    (Get-Content $_.FullName -Raw) -replace 'playwright-colorful-logger', 'playwright-logger-pro' |
+      Set-Content -NoNewline $_.FullName
+  }
+```
+
+</TabItem>
+</Tabs>
+
+```diff title="tests/example.spec.ts"
+-import { test, expect } from 'playwright-colorful-logger/fixtures';
++import { test, expect } from 'playwright-logger-pro/fixtures';
+```
+
+### 3. Clean up the lockfile
+
+Your package manager rewrote the lockfile when you installed the new package. Check that `playwright-colorful-logger` is gone from `package.json` and from the lockfile (`npm ls playwright-colorful-logger` should report nothing).
+
+### 4. Review the behaviour changes
+
+Read the next two sections. Most are improvements, and each can be reverted with one option.
+
+## Behaviour changes from playwright-colorful-logger
+
+:::warning These change your output
+The first rows change what you see in logs. Review them before merging the migration.
+:::
+
+| Area | `playwright-colorful-logger` | `playwright-logger-pro` | Revert with |
+| --- | --- | --- | --- |
+| Colours | On only when stdout is a TTY. Colourless under the test runner. | **On by default under `playwright test`** (it sets `FORCE_COLOR` for workers). `NO_COLOR` turns them off. | `colors: false` |
+| Query-string secrets | Logged as is. | **Values of `api_key`, `apikey`, `token`, `access_token`, `password` and `secret` are masked** in logged URLs and curl. | `replaceDefaultRedaction: true` with your own `redactQueryParams` (not recommended) |
+| Header redaction lists | A custom `redactHeaders` **replaced** the defaults. | Custom lists are **merged** with the defaults, so `authorization`, `cookie`, `set-cookie` and `x-api-key` stay masked. | `replaceDefaultRedaction: true` |
+| Redirected requests | Logged and curl'd the final URL and method. | **Log and curl the originally requested URL and method.** The curl adds `-L`, or one curl per step when the method changes. | None |
+| Failing requests | Timeouts and connection errors were not logged. | A `✖ … failed` line is logged (and a curl for `curl: true` / `'on-failure'`), then the error is rethrown. | None |
+| curl, bodies | `maxBodyLength` did not apply; multipart, `GET` with a body and `HEAD` did not replay; binary bodies sent the text `<binary body omitted>`. | `maxBodyLength` applies to the curl body (marked with a `# request body truncated` note); multipart (`--form-string`, `-F`), `-X GET`, `--head` and `--data-binary '@request-body.bin'` replay correctly. | None |
+| curl, context | Context headers and cookies were not included. | `extraHTTPHeaders` and (redacted) cookie-jar cookies are included. | None |
+| Request line | Without `params`. | Includes `params` in the URL. | None |
+| `undefined` options | `{ curl: undefined }` overwrote the default with `undefined`. | An option set to `undefined` uses its default. | None |
+| Invalid options | Undefined behaviour. | A one-time `[playwright-logger-pro]` warning and the default. | None |
+| Binary and control characters | Binary responses were decoded as text; escape sequences in bodies reached the terminal. | Binary responses are summarised as `<binary N bytes (type)>`; control characters are escaped. | None |
+
+## From 0.1 to 0.2
+
+If you are already on `playwright-logger-pro@0.1.0`, these are the changes in 0.2.0:
+
+:::warning Browser logging is on by default
+**`browserLog` is enabled** for everyone who imports `test` from `playwright-logger-pro/fixtures`, with quiet defaults: nothing is printed or attached while a test passes; on failure the timeline is printed once and attached to the report. Opt out per project or suite:
+
+```ts
+use: { browserLog: { enabled: false } }
+```
+
+When disabled, no page-level patch or listener is installed for that test.
+:::
+
+| Change | Notes |
+| --- | --- |
+| New `browserLog` option, `browserLogger` fixture, `attachBrowserLogger()` | See [Browser logging](./browser-logging.mdx). |
+| `LoggerOptions` type and `mergeTests` export from `/fixtures` | Use `defineConfig<LoggerOptions>()`. |
+| **Step locations stay in your spec file** | Wrapper frames are hidden from Playwright's stack attribution, which also fixes `request.*` steps and errors that used to point into `dist/`. |
+| Step titles on Playwright 1.30–1.48 | The title of a logged request is `apiRequestContext.get(...)` again (it was `apiRequestContext.apply(...)`). |
+| `exports` map | Per-condition types (`.d.mts` for `import`, `.d.ts` for `require`) and a `./package.json` export. Builds target Node 16 syntax. |
+| `redactHeaders()` | Accepts an optional third argument, the mask (default `***`). |
+| New exports | `attachBrowserLogger`, `resolveBrowserConfig`, `DEFAULT_BROWSER_CONFIG`, `DEFAULT_SENSITIVE_KEYS`, `DEFAULT_SENSITIVE_SELECTORS`, `renderBrowserEventText`, `renderBrowserEventJsonl`, and the browser types. |
+
+## "I see a deprecation warning"
+
+If `npm install` prints a deprecation notice for `playwright-colorful-logger`, that is expected: the package was renamed. Follow the steps above. The warning disappears once the old package is out of your dependency tree, including transitive dependencies in your lockfile (`npm ls playwright-colorful-logger` shows who still pulls it in).

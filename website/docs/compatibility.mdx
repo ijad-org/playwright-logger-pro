@@ -1,0 +1,63 @@
+---
+title: Compatibility
+description: Supported Playwright and Node.js versions, browsers, module systems, reporters and what CI verifies.
+---
+
+# Compatibility
+
+## At a glance
+
+| | Supported |
+| --- | --- |
+| `@playwright/test` | 1.30 and newer (peer dependency `>=1.30.0`) |
+| Node.js | 18 and newer (`engines`) |
+| Module systems | CommonJS and ES modules |
+| TypeScript `moduleResolution` | `node`/`node10`, `node16`/`nodenext`, `bundler` |
+| Browsers | Chromium, Firefox, WebKit |
+
+Features are detected at run time; versions are only checked where detection is impossible (the `test.step` integration).
+
+## Playwright versions
+
+| | 1.30 – 1.38 | 1.39 – 1.47 | ≥ 1.48 |
+| --- | --- | --- | --- |
+| API logging (`request` fixture, `wrapRequestContext`) | ✓ | ✓ | ✓ |
+| Actions on page / frame / locator / keyboard / mouse / context | ✓ | ✓ | ✓ |
+| Methods added by newer Playwright (`pressSequentially`, `clock`, ...) | skipped when absent | ✓ when present | ✓ |
+| Locator descriptions | rewritten from the raw `internal:` selector | readable | readable |
+| Step and error locations in the report point at your spec | ✓ | ✓ | ✓ |
+| `test.step` markers and step path | n/a | n/a | ✓ |
+| `mergeTests` that keeps the step integration | n/a | ✓ | ✓ |
+
+:::info Playwright ≥ 1.48
+Before 1.48, `test.step` records its direct caller as the step location, which would be this library. The integration is therefore left off there (`steps: 'auto'`): actions are still logged, without step markers. See [Browser logging](./browser-logging.mdx#steps).
+:::
+
+`mergeTests` exists in Playwright from 1.39. The `mergeTests` exported by this package throws a clear error on older versions.
+
+## Node.js
+
+Node 18 is the minimum for the library. Note that Playwright itself raises its own floor over time: for example Playwright 1.30 runs on Node 14 and later, 1.45 needs Node 18, and recent releases need Node 20. Pick a Node version that satisfies both.
+
+The package is built for Node 16 syntax and ships CommonJS (`dist/*.js`) and ESM (`dist/*.mjs`) with matching type declarations for each (`.d.ts` for `require`, `.d.mts` for `import`).
+
+## Operating systems and shells
+
+- The libraries themselves are plain JavaScript and work on Linux, macOS and Windows.
+- The **curl output is for POSIX shells** (`bash`, `zsh`, `sh`, Git Bash, WSL). It does not work as-is in PowerShell or `cmd.exe`.
+- File paths (`fileDir`) and stack-location handling accept Windows paths, `file://` URLs and frames without parentheses.
+
+## Reporters
+
+The loggers write through `console.log` (or your `sink`) and Playwright's attachments, so they work with every reporter. The `html` reporter shows the `browser-log` attachment. Colours follow [the environment](./configuration.mdx#environment-variables) and never appear in attachments or files. Details in [Reporter & attachments](./reporter-attachments.mdx#reporters).
+
+## What CI verifies
+
+The repository's CI runs:
+
+- type check, lint, unit tests, build, CJS and ESM smoke tests, and package checks (`publint`, `@arethetypeswrong/cli`);
+- the end-to-end suite with Playwright **1.30** (Node 18), **1.39** and **1.48** (Node 20) and the **latest** release (Node 22), all on Chromium; the latest release also on Firefox and WebKit. Each is run against the sources and against the built package;
+- a weekly job that lists public async methods of the latest Playwright that the browser logger does not know yet;
+- an overhead benchmark (informational).
+
+CI runs on Linux. Windows and macOS are not part of the matrix.

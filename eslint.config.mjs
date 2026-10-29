@@ -3,7 +3,8 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/'] },
+  // website/ is a separate project (its own package.json and tooling); build outputs are generated.
+  { ignores: ['dist/', 'node_modules/', 'website/', 'test-results/', 'playwright-report/', 'blob-report/'] },
   eslint.configs.recommended,
   tseslint.configs.recommended,
   {
