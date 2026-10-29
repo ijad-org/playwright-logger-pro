@@ -24,7 +24,9 @@
   --ifm-navbar-height: 3.75rem;
   --ifm-toc-border-color: #d9dee5;
 
-  --docusaurus-highlighted-code-line-bg: rgb(21 128 61 / 0.12);
+  /* Highlighted code lines: tint kept light so every token stays >= 4.5:1 on it. scripts/check-prism-contrast.mjs
+     reads both values below; edit them here only. */
+  --docusaurus-highlighted-code-line-bg: rgb(21 128 61 / 0.08);
   --plp-surface: #f8fafc;
   --plp-focus: #15803d;
 
@@ -56,7 +58,7 @@
   --ifm-toc-border-color: #35383d;
   --ifm-link-hover-color: var(--ifm-color-primary-lighter);
 
-  --docusaurus-highlighted-code-line-bg: rgb(74 222 128 / 0.15);
+  --docusaurus-highlighted-code-line-bg: rgb(74 222 128 / 0.08);
   --plp-surface: #232427;
   --plp-focus: #4ade80;
 

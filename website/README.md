@@ -27,6 +27,10 @@ Prerequisites: the library is built (`npm run build` in the repository root) and
 
 Offline: `@easyops-cn/docusaurus-search-local` builds a lunr index at build time (`build/search-index-<hash>.json`). Our `SearchBar` replaces the plugin's UI with a dialog (Ctrl/Cmd+K, `/`) and reuses the plugin's search worker through `src/theme/SearchBar/searchEngine.ts`. If a plugin upgrade moves those files, that is the only module to adapt.
 
+## Releasing the library
+
+Tag `vX.Y.Z` on `main`, then publish a stable version from Actions -> Release -> Run workflow: under "Use workflow from" pick the `vX.Y.Z` tag (not `main`) and enter the same tag in the input. The `npm-publish` environment only allows `v*` tag refs. Full steps in [CONTRIBUTING.md](../CONTRIBUTING.md#releasing).
+
 ## Preview phase
 
 Until 0.2.0 is published: the announcement bar in `docusaurus.config.ts` and, optionally, the repository variable `DOCS_NOINDEX=1`. Remove both in the release PR, and snapshot the docs version (`npx docusaurus docs:version 0.2`).
