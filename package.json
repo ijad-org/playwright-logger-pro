@@ -1,5 +1,5 @@
 {
-  "name": "playwright-colorful-logger",
+  "name": "playwright-logger-pro",
   "version": "0.1.0",
   "description": "Colorful request/response logging for Playwright's APIRequestContext, with optional copy-pastable curl output",
   "author": "Shahul Hameed M Y (https://linkedin.com/in/shahulhameedmy)",
@@ -7,11 +7,11 @@
   "packageManager": "pnpm@11.15.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ijad-org/playwright-api-logger.git"
+    "url": "git+https://github.com/ijad-org/playwright-logger-pro.git"
   },
-  "homepage": "https://github.com/ijad-org/playwright-api-logger#readme",
+  "homepage": "https://github.com/ijad-org/playwright-logger-pro#readme",
   "bugs": {
-    "url": "https://github.com/ijad-org/playwright-api-logger/issues"
+    "url": "https://github.com/ijad-org/playwright-logger-pro/issues"
   },
   "keywords": [
     "playwright",
