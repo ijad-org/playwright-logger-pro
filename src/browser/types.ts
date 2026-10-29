@@ -1,6 +1,7 @@
 import { DEFAULT_REDACT_HEADERS, detectColorSupport, mergeNames, resolveConfig } from '../types';
 import type { ApiLoggerConfig } from '../types';
-import { REDACTED, normalizeSecretValues } from '../redact';
+import { REDACTED, headerSecretValues, normalizeSecretValues } from '../redact';
+import { validateBrowserConfig } from './validate';
 import { DEFAULT_SENSITIVE_KEY_PATTERNS, DEFAULT_SENSITIVE_SELECTORS } from './sensitive';
 
 export type ConsoleLevel = false | 'error' | 'warning' | 'info' | 'all';
@@ -170,9 +171,11 @@ function defined<T extends object>(obj: T | undefined): Partial<T> {
 }
 
 export function resolveBrowserConfig(
-    config: BrowserLoggerConfig = {},
+    input: BrowserLoggerConfig = {},
     context: ResolveContext = {},
 ): ResolvedBrowserConfig {
+  // Invalid options warn once and fall back to the defaults (nothing here throws).
+  const config = validateBrowserConfig(input);
   const userRedact = defined(config.redact);
   // One header list for both loggers: apiLog's resolved list (defaults + its
   // extras, honouring replaceDefaultRedaction) plus browserLog's own extras.
@@ -187,7 +190,8 @@ export function resolveBrowserConfig(
   if (context.extraHTTPHeaders) {
     const lowered = new Set(headers.map((h) => h.toLowerCase()));
     for (const [name, value] of Object.entries(context.extraHTTPHeaders)) {
-      if (lowered.has(name.toLowerCase())) auto.push(value);
+      // `Bearer X` is learned whole and as the bare token X.
+      if (lowered.has(name.toLowerCase())) auto.push(...headerSecretValues(name, value));
     }
   }
 

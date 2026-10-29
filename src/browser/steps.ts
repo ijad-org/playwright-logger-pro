@@ -1,6 +1,6 @@
 import { getRegistry } from './registry';
 import { getActiveSession } from './attach';
-import { callSite } from './session';
+import { callSite } from './callSite';
 import { ensureStackHygiene } from './stackHygiene';
 import { honoursStepLocation } from './pwVersion';
 

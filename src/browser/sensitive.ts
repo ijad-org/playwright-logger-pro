@@ -33,9 +33,21 @@ export function compileKeyPatterns(names: readonly string[]): RegExp[] {
 export const DEFAULT_SENSITIVE_SELECTORS: readonly (string | RegExp)[] = [
   ...compileKeyPatterns(DEFAULT_SENSITIVE_KEYS),
   /one[-_ ]?time/i,
-  /card[-_ ]?number|cc-number/i,
   /type=["']?password/i,
   /current-password|new-password|one-time-code/i,
+  // Card numbers and codes, by id / name / autocomplete / label text:
+  // `#cardnumber`, `[name=card_no]`, `[autocomplete=cc-number]`, `getByLabel('Credit card')`.
+  /card[-_ ]?number/i,
+  /(?:^|[^a-z])card[-_ .]?(?:num|no)(?![a-z])/i,
+  /\bcc[-_ ]?(?:number|num|csc|cvc|cvv)(?![a-z])/i,
+  /(?:credit|debit)[-_ ]?card/i,
+  /security[-_ ]?code|verification[-_ ]?code|social[-_ ]?security/i,
+  /\b(?:2fa|mfa|totp)\b/i,
+  // A field that is just "card": `#card`, `[name="card"]`, `getByLabel('Card')`, a textbox named "Card".
+  // Not `.card` (a CSS class), `getByText('Card')` or a button.
+  /(?:#|\[\s*(?:id|name)\s*[~|^$*]?=\s*["']?)card(?![\w-])/i,
+  /get(?:ByLabel|ByPlaceholder)\(\s*'\s*card\s*'/i,
+  /getByRole\('(?:textbox|spinbutton)',\s*\{[^}]*name:\s*'\s*card\s*'/i,
 ];
 
 /** Object keys masked inside arguments (`evaluate` args, cookies, option bags). */

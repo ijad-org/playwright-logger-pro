@@ -167,8 +167,8 @@ test('fillValues: always masks everything, never masks nothing (literal values s
 test('custom selectors extend the defaults when spread', async () => {
   const { s, page } = sessionFor({ redact: { selectors: ['#vault'] } });
   await page.locator('#vault').fill('abcdefgh');
-  await page.locator('#password').fill('abcdefgh');
-  assert.deepEqual(lastArgs(s), ['***', "'abcdefgh'"]); // replaced, not merged: documented
+  await page.locator('#password').fill('ijklmnop');
+  assert.deepEqual(lastArgs(s), ['***', "'ijklmnop'"]); // replaced, not merged: documented
 });
 
 test('errors never echo a masked secret', async () => {
