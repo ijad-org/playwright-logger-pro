@@ -68,5 +68,6 @@ test('single quotes in values are shell-escaped', () => {
 
 test('buffer bodies are not dumped raw', () => {
   const cmd = buildCurl({ method: 'post', url: 'http://x/y', data: Buffer.from([1, 2, 3]) });
-  assert.match(cmd, /--data-raw '<binary body omitted>'/);
+  assert.match(cmd, /--data-binary '@request-body\.bin'/);
+  assert.doesNotMatch(cmd, /\x01/);
 });
