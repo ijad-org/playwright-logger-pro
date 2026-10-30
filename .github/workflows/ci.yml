@@ -47,12 +47,19 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      # The toolchain (pnpm 11, from packageManager) needs Node >= 22.13, so install and build on 22 ...
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # ... then switch to the matrix Node, so the e2e tests (and the npm that installs the requested
+      # Playwright) run under the Node version being tested. pnpm is not used after this point.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --version
       # Sources first, then the built package: both must behave the same.
       - run: node scripts/e2e-version.mjs ${{ matrix.playwright }} --browsers ${{ matrix.browsers }}
         env:
@@ -66,6 +73,7 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     continue-on-error: true # informational: not a gate
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0

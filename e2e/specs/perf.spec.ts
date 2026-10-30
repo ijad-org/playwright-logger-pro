@@ -7,6 +7,8 @@ const label = process.env.PLP_PERF_LABEL ?? 'enabled';
 test.use({ browserLog: { enabled: label !== 'disabled' } });
 
 test('@perf 500 fill and 500 click calls on a static page', async ({ page }, testInfo) => {
+  // ~1000 actions at 10-50 ms each (a click waits for a stable frame) overrun the suite's 20 s default on slow CI runners.
+  test.setTimeout(180_000);
   await page.goto('/');
   const input = page.locator('#text');
   const button = page.locator('#go');

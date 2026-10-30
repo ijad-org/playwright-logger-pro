@@ -160,12 +160,14 @@ test.describe('network', () => {
 
   test.describe('request failures', () => {
     test.use({ browserLog: { network: 'failed' } });
-    test('aborted requests are recorded with the failure text', async ({ page, browserLogger }) => {
+    test('aborted requests are recorded with the failure text', async ({ page, browserLogger, browserName }) => {
       await page.route('**/api/ok', (route) => route.abort('connectionrefused'));
       await page.goto('/');
       await page.evaluate(() => fetch('/api/ok').catch(() => undefined));
       await expect.poll(() => ofKind(browserLogger.events(), 'network').length).toBe(1);
-      expect(ofKind(browserLogger.events(), 'network')[0].failure).toMatch(/refused/i);
+      // The text is whatever the browser reports; WebKit does not map route.abort() error codes.
+      const expected = browserName === 'webkit' ? /Blocked by Web Inspector/ : /refused/i;
+      expect(ofKind(browserLogger.events(), 'network')[0].failure).toMatch(expected);
     });
   });
 });
