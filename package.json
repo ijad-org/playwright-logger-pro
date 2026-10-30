@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/ijad-org/playwright-logger-pro.git"
   },
-  "homepage": "https://github.com/ijad-org/playwright-logger-pro#readme",
+  "homepage": "https://ijad-org.github.io/playwright-logger-pro/",
   "bugs": {
     "url": "https://github.com/ijad-org/playwright-logger-pro/issues"
   },
@@ -53,7 +53,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "sideEffects": false,
   "engines": {

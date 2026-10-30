@@ -1,0 +1,203 @@
+---
+title: API logging
+description: Log Playwright APIRequestContext requests and responses, with optional replayable curl and redacted secrets.
+---
+
+# API logging
+
+API logging prints every HTTP call made through Playwright's `APIRequestContext` (`request.get`, `post`, `put`, `patch`, `delete`, `head` and `fetch`). It is configured with the `apiLog` option.
+
+## Two ways to turn it on
+
+<Tabs groupId="api-mode">
+<TabItem value="fixture" label="Fixture (recommended)" default>
+
+Import `test` and `expect` from `playwright-logger-pro/fixtures`. The built-in `request` fixture is wrapped automatically, and `baseURL` and `extraHTTPHeaders` from your Playwright config are passed on to the logger.
+
+```ts title="tests/vegetables.spec.ts"
+import { test, expect } from 'playwright-logger-pro/fixtures';
+
+test('create vegetable', async ({ request }) => {
+  const res = await request.post('/vegetables', { data: { name: 'Orange', price: 1 } });
+  expect(res.status()).toBe(201);
+});
+```
+
+Configure it project-wide, or per suite or test with `test.use()`:
+
+<Tabs groupId="lang">
+<TabItem value="ts" label="TypeScript" default>
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { ApiLoggerOptions } from 'playwright-logger-pro/fixtures';
+
+export default defineConfig<ApiLoggerOptions>({
+  use: {
+    baseURL: 'http://localhost:3000',
+    apiLog: { curl: 'on-failure' },
+  },
+});
+```
+
+</TabItem>
+<TabItem value="js" label="JavaScript">
+
+```js title="playwright.config.js"
+// @ts-check
+const { defineConfig } = require('@playwright/test');
+
+module.exports = defineConfig({
+  use: {
+    baseURL: 'http://localhost:3000',
+    apiLog: { curl: 'on-failure' },
+  },
+});
+```
+
+</TabItem>
+</Tabs>
+
+```ts
+test.describe('debugging this flow', () => {
+  test.use({ apiLog: { curl: true, maxBodyLength: 10000 } });
+  // ...
+});
+```
+
+:::warning `test.use` replaces the whole object
+`test.use({ apiLog: { ... } })` replaces the `apiLog` object from your config rather than merging into it. Repeat the options you still want.
+:::
+
+</TabItem>
+<TabItem value="manual" label="Manual wrapper">
+
+`wrapRequestContext()` wraps any `APIRequestContext`, for example one you create in a script or in `beforeAll`:
+
+```ts
+import { request } from '@playwright/test';
+import { wrapRequestContext } from 'playwright-logger-pro';
+
+const ctx = wrapRequestContext(
+  await request.newContext({ baseURL: 'https://api.example.com' }),
+  { curl: true, baseURL: 'https://api.example.com' },
+);
+const res = await ctx.get('/users');
+```
+
+The wrapper is a transparent proxy: everything else on `APIRequestContext` (`dispose()`, `storageState()`, ...) keeps working; only the HTTP verb methods gain logging.
+
+In manual mode the logger only knows what you tell it. Pass `baseURL` to get absolute URLs in error lines and curl, and pass the same `extraHTTPHeaders` you gave `newContext()` to have them appear in the logged headers and curl.
+
+</TabItem>
+</Tabs>
+
+## Output anatomy
+
+<TerminalOutput sample="api-post" title="POST with curl: true" />
+
+| Line | Meaning |
+| --- | --- |
+| `→ METHOD url` | The request. Includes `params` in the query string. Indented below it: request headers (when the call sets any) and the body. |
+| `← METHOD url STATUS (Nms)` | The response, with the original request method and URL, the status, and the time to the response. Below: response headers, then the body. |
+| `✖ METHOD url failed (Nms) error` | The request failed without a response (timeout, connection refused, ...). The error is then rethrown unchanged. |
+| `curl ...` | The equivalent command, when `curl` is `true` (always) or `'on-failure'` (status not 2xx, or no response). |
+
+Methods and statuses are colour-coded: GET cyan, POST green, DELETE red; 2xx green, 4xx yellow, 5xx red. The glyphs and the status text carry the same information when colours are off.
+
+<TerminalOutput sample="api-refused" title="A request that fails without a response" />
+
+- Turn headers off with `logHeaders: false` and bodies with `logBody: false`.
+- Bodies longer than `maxBodyLength` (default 2000 characters) are cut and end with `... (N more chars)`. The cut never splits an emoji or another multi-byte character. `Infinity` disables truncation.
+- Repeated response headers (several `Set-Cookie`) are printed as one indented line per value.
+- Binary request bodies (a `Buffer` as `data`) are logged as `<Buffer N bytes>`. Binary responses (non-text content type) as `<binary N bytes (type)>`.
+- Control characters in text bodies, such as terminal escape sequences sent by a server, are escaped (`\x1b`), so a response cannot inject escape codes into your log.
+- Responses are logged when they complete. With concurrent requests (`Promise.all`) the lines appear in completion order, not call order.
+
+## Verbs and `fetch`
+
+All of `get`, `post`, `put`, `patch`, `delete`, `head` and `fetch` are logged. `fetch` accepts a URL string, a `URL` object or a Playwright `Request`; the real URL is logged in each case.
+
+## Redirects
+
+The logged URL and method are the ones you requested. For a redirected request the curl follows Playwright's rules, which differ from `curl -L`: a 303 turns any method except GET/HEAD into a GET without a body, a 301/302 turns a POST into a GET, and PUT/PATCH/DELETE keep their method and body on 301/302/307/308.
+
+A redirected GET or HEAD gets `-L`. Any other redirected request gets **one curl per step**, with the method, URL and body Playwright actually used (a step that became a GET has no body and no `Content-Type`/`Content-Length`, and it stays a bodiless GET on later 307/308 steps). Which headers are forwarded depends on the Playwright version (see below). The steps are read from Playwright's fetch log; if that is not available, a POST with a body is replayed with `-L` and any other method is replayed without following the redirect, with a comment saying so.
+
+### Redirect headers by Playwright version
+
+Which headers Playwright forwards to a redirect target changed between releases. The step curls follow the version that is installed (read from its `package.json`; when it cannot be found the 1.60+ rules are used). Secrets are redacted in every step as usual.
+
+| Playwright | `Cookie` you set | `Authorization` to another origin |
+| --- | --- | --- |
+| 1.30 – 1.31 | dropped | forwarded |
+| 1.32 – 1.59 | forwarded if spelled `Cookie`, dropped if spelled `cookie`; the same exact-case rule applies to `Content-Type` and the other body headers when a redirect becomes a GET | forwarded |
+| 1.60+ | dropped | dropped |
+
+Cookies from the cookie jar are never carried over: Playwright re-reads the jar for each step, and they are not in the printed steps. On 1.30 – 1.59 a replayed step curl really does send your `Authorization` (and, on 1.32 – 1.59, `Cookie`) to the other origin, because Playwright did; the values in the printed curl are still redacted.
+
+## curl output
+
+Set `curl: true` to print a curl for every request, or `curl: 'on-failure'` to print it only when the response status is not 2xx or no response arrived. The default is `false`.
+
+<TerminalOutput sample="api-failure" title="curl: 'on-failure', logHeaders: false" />
+
+What the curl reproduces:
+
+- **Method and URL**: `GET` with a body uses `-X GET`; `HEAD` uses `--head`.
+- **Headers**, including the context's `extraHTTPHeaders` and (redacted) cookies from the context's cookie jar. The jar is read before the request is sent, so a cookie set by the response itself is not included.
+- **JSON, form and raw bodies** as `--data-raw` / `--data-urlencode`.
+- **Multipart** as `--form-string` for fields and `-F 'name=@file'` for files. A file given as a path is read from that path; a file given as an in-memory buffer is read from its file name in the current directory, as a comment in the curl says.
+- **Binary bodies** as `--data-binary '@request-body.bin'` with a comment telling you to save the bytes to that file first.
+- `maxBodyLength` also applies to the curl body; a truncated body starts the command with a `# request body truncated` comment.
+
+:::warning curl limitations
+- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh` (also Git Bash and WSL), and lines continue with `\`. The command does not work as-is in PowerShell or `cmd.exe`.
+- **Redacted values are sent literally** as `***`. Put the real value back before replaying.
+- Settings that are not part of the request, such as `httpCredentials`, proxy, client certificates and `ignoreHTTPSErrors`, are not in the curl.
+- An unparsable URL gives `# could not build curl: invalid URL`.
+:::
+
+## Redaction
+
+Secrets are masked in the logged URL, headers and bodies **and** in the curl. By default:
+
+- headers `authorization`, `cookie`, `set-cookie`, `x-api-key`
+- query parameters `api_key`, `apikey`, `token`, `access_token`, `password`, `secret`
+
+Request and response bodies are **not** masked by default. Opt in per key:
+
+```ts
+use: { apiLog: { redactBodyKeys: ['password', 'access_token', 'refreshToken'] } }
+```
+
+<TerminalOutput sample="api-redaction" title="Authorization, api_key and a body key masked" />
+
+Custom lists are **added** to the defaults, never replace them. See [Redaction & security](./redaction-security.mdx#api-logging) for the details and for `replaceDefaultRedaction`.
+
+## Colours
+
+With `colors` unset, the logger decides like Playwright's reporters, in this order: off for a non-empty `NO_COLOR` or `FORCE_COLOR=0`/`false`; on for any other `FORCE_COLOR` or `DEBUG_COLORS`; on for `PLAYWRIGHT_FORCE_TTY`; on when stdout or stderr is a TTY (unless `TERM=dumb`). `colors: true` or `false` always wins, including over `NO_COLOR`. See [Configuration](./configuration.mdx#environment-variables).
+
+## Redirect the output
+
+```ts
+import fs from 'node:fs';
+
+const stream = fs.createWriteStream('api.log', { flags: 'a' });
+test.use({ apiLog: { colors: false, sink: (line) => stream.write(line + '\n') } });
+```
+
+A `sink` that throws never fails the request: you get one warning and the lines go to `console.log` instead.
+
+To keep API lines in the report, attach them yourself from a sink, or use `browserLog.includeApiLog` (the default), which copies apiLog lines into the browser-log attachment and files. See [Reporter & attachments](./reporter-attachments.mdx#api-lines-in-the-browser-log).
+
+## Turn it off
+
+```ts
+test.use({ apiLog: { enabled: false } }); // transparent pass-through
+```
+
+## Options with invalid values
+
+An option set to `undefined` uses its default. An invalid value (`maxBodyLength: NaN`, `curl: 'always'`, a `sink` that is not a function, a string where a list is expected) never fails a request: a one-time `[playwright-logger-pro]` warning is printed and the default is used.

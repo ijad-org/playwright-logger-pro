@@ -4,3 +4,12 @@ dist/
 test-results/
 playwright-report/
 blob-report/
+
+# documentation site (website/)
+website/node_modules/
+website/build/
+website/.docusaurus/
+website/docs/api/
+website/src/pages/changelog.md
+website/test-results/
+website/playwright-report/

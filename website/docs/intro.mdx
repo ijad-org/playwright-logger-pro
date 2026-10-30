@@ -1,0 +1,96 @@
+---
+title: Getting started
+sidebar_label: Getting started
+description: What Playwright Logger Pro is, a two-minute quick start, and what you get by default.
+slug: /intro
+---
+
+# Playwright Logger Pro
+
+Playwright Logger Pro makes the output of your Playwright tests readable when something goes wrong. It adds two loggers to the `test` you already use:
+
+- **API logging** prints every `request.get/post/put/patch/delete/head/fetch` call with its status, timing, headers and body, and can print a `curl` command that replays the request.
+- **Browser logging** records what a test did in the page (clicks, fills, navigations, console messages, page errors, dialogs, downloads, `test.step` boundaries). It stays quiet while the test passes, and prints one timeline and attaches it to the report when the test fails.
+
+Secrets are masked in both: authorization headers, cookies, token-like query parameters and password fields never reach your logs by default.
+
+:::info Preview
+This site documents **0.2.0**, which adds browser logging and a number of fixes. The `0.1.0` release on npm has API logging only. See [Migration](./migration.mdx) if you came from `playwright-colorful-logger`.
+:::
+
+<TerminalOutput sample="api-post" title="API logging: a POST with curl: true" />
+
+## Quick start (2 minutes)
+
+<Tabs groupId="pm">
+<TabItem value="npm" label="npm" default>
+
+```sh
+npm i -D playwright-logger-pro
+```
+
+</TabItem>
+<TabItem value="pnpm" label="pnpm">
+
+```sh
+pnpm add -D playwright-logger-pro
+```
+
+</TabItem>
+<TabItem value="yarn" label="yarn">
+
+```sh
+yarn add -D playwright-logger-pro
+```
+
+</TabItem>
+</Tabs>
+
+You need `@playwright/test` 1.30 or newer (a peer dependency you already have) and Node.js 18 or newer.
+
+Then change the import of `test` and `expect` in your spec files:
+
+```ts title="tests/vegetables.spec.ts" {1}
+import { test, expect } from 'playwright-logger-pro/fixtures';
+
+test('create vegetable', async ({ request, page }) => {
+  const res = await request.post('/vegetables', { data: { name: 'Orange', price: 1 } });
+  expect(res.status()).toBe(201);
+
+  await page.goto('/vegetables');
+  await expect(page.getByText('Orange')).toBeVisible();
+});
+```
+
+Run your tests as usual:
+
+```sh
+npx playwright test
+```
+
+The request is logged live, with colours, as in the sample above. Nothing is printed for the browser part while the test passes. If the test fails, you get the browser timeline once:
+
+<TerminalOutput sample="browser-failure" title="Browser logging: the failure block (also attached as browser-log)" />
+
+## What you get by default
+
+| | Default |
+| --- | --- |
+| API logging | On. Every request and response is printed as it happens, with headers and bodies (bodies cut at 2000 characters). No curl. |
+| Browser logging | On, quiet. The timeline is printed and attached to the report only when a test fails. |
+| Colours | On under `playwright test` (it sets `FORCE_COLOR` for its workers). `NO_COLOR` turns them off. Files and attachments are always plain text. |
+| Redaction | On. See [Redaction & security](./redaction-security.mdx). |
+
+## How it works
+
+- The drop-in `test` from `playwright-logger-pro/fixtures` wraps the built-in `request` fixture, so existing `request.*` calls are logged without changes.
+- Browser actions are recorded by instrumenting the public async methods of Playwright's classes once per worker, on the prototypes. Your objects are never wrapped, so `page`, `locator` and `expect(locator)` behave exactly as before.
+- Only passive listeners are added (console, page errors, navigation, popups, downloads, and requests when you opt in to `network`).
+- The logger never fails a test because of its own error. A bad option gets a one-time `[playwright-logger-pro]` warning and falls back to the default.
+
+## Next steps
+
+- [Installation](./installation.mdx): requirements, ESM and CJS, TypeScript settings.
+- [API logging](./api-logging.mdx) and [Browser logging](./browser-logging.mdx): the two guides.
+- [Redaction & security](./redaction-security.mdx): what is masked, and what Playwright itself still records.
+- [Configuration](./configuration.mdx): every option, with defaults.

@@ -638,9 +638,11 @@ describe('PCL-16: package metadata and lint tooling', () => {
     assert.equal(pkg.engines?.node, '>=18');
     const [major] = process.versions.node.split('.').map(Number);
     assert.ok(major >= 18, 'tests run on a supported Node');
-    for (const url of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) {
+    for (const url of [pkg.repository.url, pkg.bugs.url]) {
       assert.match(url, /github\.com\/ijad-org\/playwright-logger-pro\b/);
     }
+    // The homepage is the documentation site.
+    assert.equal(pkg.homepage, 'https://ijad-org.github.io/playwright-logger-pro/');
     assert.match(pkg.scripts.lint, /^eslint\b/);
     for (const dep of ['eslint', 'typescript-eslint']) {
       assert.ok(pkg.devDependencies[dep], `${dep} is a devDependency`);

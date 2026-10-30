@@ -1,0 +1,113 @@
+---
+title: Installation
+description: Install playwright-logger-pro, requirements, ESM and CJS imports, TypeScript settings and monorepo notes.
+---
+
+# Installation
+
+## Requirements
+
+| | Supported |
+| --- | --- |
+| `@playwright/test` | 1.30 or newer (peer dependency) |
+| Node.js | 18 or newer |
+| Module systems | CommonJS and ES modules |
+| TypeScript `moduleResolution` | `node` (`node10`), `node16`/`nodenext` and `bundler` |
+| Browsers | Chromium, Firefox and WebKit |
+
+See [Compatibility](./compatibility.mdx) for what each Playwright version supports and what CI verifies.
+
+## Install
+
+```bash npm2yarn
+npm install --save-dev playwright-logger-pro
+```
+
+`@playwright/test` is a **peer dependency**: the package never installs its own copy, so it always instruments the Playwright that runs your tests.
+
+:::info Version
+The `latest` tag on npm currently points to `0.1.0`, which has API logging only. Browser logging (`browserLog`, `browserLogger`, `attachBrowserLogger`) is part of `0.2.0`.
+:::
+
+## Import
+
+The package has two entry points.
+
+<Tabs groupId="lang">
+<TabItem value="ts" label="TypeScript" default>
+
+```ts title="tests/example.spec.ts"
+// The drop-in `test` / `expect`: both loggers are active.
+import { test, expect } from 'playwright-logger-pro/fixtures';
+
+// Building blocks, for when you do not use the fixtures.
+import { wrapRequestContext, attachBrowserLogger } from 'playwright-logger-pro';
+```
+
+</TabItem>
+<TabItem value="js-esm" label="JavaScript (ESM)">
+
+```js title="tests/example.spec.js"
+import { test, expect } from 'playwright-logger-pro/fixtures';
+import { wrapRequestContext, attachBrowserLogger } from 'playwright-logger-pro';
+```
+
+</TabItem>
+<TabItem value="js-cjs" label="JavaScript (CommonJS)">
+
+```js title="tests/example.spec.js"
+const { test, expect } = require('playwright-logger-pro/fixtures');
+const { wrapRequestContext, attachBrowserLogger } = require('playwright-logger-pro');
+```
+
+</TabItem>
+</Tabs>
+
+## Type your config
+
+`apiLog` and `browserLog` are Playwright option fixtures. Pass `LoggerOptions` to `defineConfig` so `use` is type-checked:
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
+
+export default defineConfig<LoggerOptions>({
+  use: {
+    baseURL: 'http://localhost:3000',
+    apiLog: { curl: 'on-failure' },
+    browserLog: { network: 'failed' },
+  },
+});
+```
+
+`ApiLoggerOptions` (only `apiLog`) and `BrowserLoggerOptions` (only `browserLog`) are exported as well.
+
+## TypeScript settings
+
+Types resolve under every `moduleResolution` value. For `node`/`node10`, the package ships `typesVersions` so that `playwright-logger-pro/fixtures` resolves too. If your editor reports TS2307 on the `/fixtures` import, see [Troubleshooting](./troubleshooting.mdx#ts2307-on-the-fixtures-import).
+
+## Monorepos and pnpm
+
+With pnpm's strict `node_modules`, `playwright-logger-pro` finds `@playwright/test` through its peer dependency, so install both in the package that owns your Playwright config:
+
+```bash npm2yarn
+npm install --save-dev @playwright/test playwright-logger-pro
+```
+
+Keep a single copy of `@playwright/test` per workspace: if the logger and your tests resolve different copies, the fixtures it extends are not the ones your tests run with.
+
+## Check the install
+
+```sh
+npm ls playwright-logger-pro @playwright/test
+```
+
+Then run any spec that imports from `playwright-logger-pro/fixtures` and a request should print `→` and `←` lines. If nothing is printed, see [No logs at all](./troubleshooting.mdx#no-logs-at-all).
+
+## Uninstall
+
+```bash npm2yarn
+npm uninstall playwright-logger-pro
+```
+
+Then switch your imports back to `@playwright/test` and remove `apiLog` and `browserLog` from `use`.

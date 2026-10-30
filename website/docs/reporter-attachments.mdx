@@ -1,0 +1,129 @@
+---
+title: Reporter & attachments
+description: The browser-log attachment, per-test files, the JSONL format, and how the output behaves with each Playwright reporter.
+---
+
+# Reporter & attachments
+
+Browser logging has three destinations. Each is controlled by its own option and can be set to `true` (always), `false` (never) or `'on-failure'`.
+
+| Destination | Option | Default | Colours |
+| --- | --- | --- | --- |
+| Console (`sink`) | `print` | `'on-failure'` | Follow `colors` (auto-detected) |
+| Report attachment | `attach` | `'on-failure'` | Never. Plain text |
+| Per-test file | `file` | `false` | Never. Plain text |
+
+:::info
+Files and attachments never contain ANSI escape sequences, whatever `colors` says, and control characters in logged text are escaped.
+:::
+
+## The `browser-log` attachment
+
+For a failed test, the HTML report and any reporter that lists attachments show an attachment named `browser-log` (`text/plain`) with the same timeline as the console block. With `attachFormat: 'jsonl'` it is named `browser-log.jsonl` (`application/x-ndjson`).
+
+```ts
+use: { browserLog: { attach: true } } // attach for passing tests too
+```
+
+## Per-test files
+
+```ts
+use: {
+  browserLog: {
+    file: 'on-failure',
+    fileFormat: 'jsonl',
+    fileDir: 'logs/browser',
+  },
+}
+```
+
+- With `fileDir`, files are named `<test title>-<id>[-retryN][-repeatN].<ext>` where `<ext>` is `txt` or `jsonl`. The id is derived from the test, so the same test always maps to the same name and retries and repeats never overwrite each other.
+- Without `fileDir`, the file is `browser-log.txt` / `browser-log.jsonl` in the test's output directory (`testInfo.outputPath()`), which Playwright manages.
+- The logger creates the directory if needed and **never deletes or cleans** any directory.
+
+:::warning Playwright cleans its output folder
+Playwright empties `outputDir` at the start of each run. Files written there disappear with it. Use `fileDir` outside `test-results` for logs you want to keep.
+:::
+
+## JSONL format (schema v1) {#jsonl}
+
+One JSON object per line. Every event has:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `v` | `1` | Schema version. |
+| `seq` | number | Monotonic sequence number within the session. |
+| `t` | number | Milliseconds since the session started (monotonic clock). |
+| `ts` | string | Wall-clock ISO timestamp. |
+| `kind` | string | The event kind, see below. |
+| `page` | number? | Page id (`page#N`). Only set when the session has more than one page. |
+| `step` | string[]? | Enclosing `test.step` titles, outermost first. For `step` events: the parent steps only. |
+
+Fields are not in a guaranteed order. Kinds and their extra fields:
+
+| `kind` | Extra fields |
+| --- | --- |
+| `action` | `category` (`action`/`wait`/`query`/`navigation`), `target` (`page`, `frame`, `locator`, `elementHandle`, `keyboard`, `mouse`, `touchscreen`, `clock`, `context`, `browser`, `dialog`, `download`), `subject?`, `method`, `args`, `redacted?`, `status` (`ok`/`error`/`pending`), `durationMs?`, `slow?`, `error?` (`name`, `message`), `location?` (`file`, `line`, `column`) |
+| `navigation` | `url` |
+| `page` | `event` (`opened`/`popup`/`closed`/`crashed`), `url?`, `opener?` |
+| `console` | `level`, `text`, `location?` |
+| `pageerror` | `message`, `stack?` |
+| `network` | `method`, `url`, `resourceType`, `status?`, `durationMs?`, `failure?` |
+| `dialog` | `dialogType`, `message` |
+| `download` | `url`, `suggestedFilename` |
+| `step` | `phase` (`start`/`end`), `title`, `status?` (`passed`/`failed`/`skipped`), `durationMs?` |
+| `note` | `message` |
+| `api` | `text` (a copied apiLog block, see below) |
+| `dropped` | `count` (events lost to `maxEvents`) |
+
+A real line (a masked `fill`):
+
+```json
+{"v":1,"seq":3,"t":134.396,"ts":"2026-10-29T19:41:56.965Z","step":["Log in"],"kind":"action","category":"action","target":"locator","subject":"locator('#password')","method":"fill","args":"***","redacted":true,"status":"ok","durationMs":29}
+```
+
+All values are redacted before they are stored, so the JSONL is safe to hand to tooling under the same rules as the text.
+
+Find the slowest actions of a run, or every failed action, with [`jq`](https://jqlang.github.io/jq/):
+
+```bash
+jq -s 'map(select(.kind=="action")) | sort_by(-.durationMs) | .[:5][] | {method, subject, durationMs}' logs/browser/*.jsonl
+jq -c 'select(.kind=="action" and .status=="error")' logs/browser/*.jsonl
+```
+
+## API lines in the browser log {#api-lines-in-the-browser-log}
+
+With `includeApiLog: true` (the default) the lines printed by apiLog during a test are copied into the browser-log attachment and files as `api` events, so a failing end-to-end test shows its HTTP calls in the same timeline. They are **never printed twice** and are not part of the live console output or the failure block. An API-only test (no browser activity) produces no browser-log output at all.
+
+If you want API lines in the report without any browser activity, attach them yourself with a `sink`:
+
+```ts
+import { test } from 'playwright-logger-pro/fixtures';
+
+const lines: string[] = [];
+test.use({ apiLog: { colors: false, sink: (line) => lines.push(line) } });
+
+test.afterEach(async ({}, testInfo) => {
+  if (lines.length) await testInfo.attach('api-log', { body: lines.join('\n'), contentType: 'text/plain' });
+  lines.length = 0;
+});
+```
+
+## Reporters
+
+| Reporter | Behaviour |
+| --- | --- |
+| `list`, `line`, `dot` | The failure block is worker stdout, which these reporters forward to the terminal, with ANSI colours when `colors` is on. |
+| `html` | Shows the `browser-log` attachment on the failed test. The attachment is plain text. |
+| `github` | The block is in the job log, where Actions renders ANSI colours. |
+| `json`, `junit`, `blob`, custom | Attachments and stdout are reported according to each reporter's own rules. |
+
+The console block is written through `sink` (default `console.log`), so it appears in the worker's stdout. If your CI log viewer does not render ANSI colours, set `colors: false` or `NO_COLOR=1`.
+
+## Sharding and `merge-reports`
+
+The attachment is part of the test result, so sharded runs and `merge-reports` keep it. Files written with `fileDir` are written on the machine that ran the test; collect them as artifacts from every shard.
+
+## Step locations in the trace viewer
+
+Wrapper frames are hidden from Playwright's stack attribution. Steps and errors in the HTML report and the trace viewer point at your spec file, and this also applies to `request.*` calls of the apiLog fixture. If locations ever point into `node_modules`, see [Troubleshooting](./troubleshooting.mdx#step-locations-point-into-node_modules).

@@ -1,0 +1,208 @@
+---
+title: Redaction & security
+description: What is masked by default in API and browser logs, how to mask more, and what Playwright's own artifacts still contain.
+---
+
+# Redaction & security
+
+Logs, CI artifacts and test reports get shared. Playwright Logger Pro masks secrets in **everything it outputs**: console, attachments, files, in-memory events and curl commands. Masked values are replaced with `***` (configurable for the browser log).
+
+:::danger Playwright's own artifacts are not redacted by this library
+Redaction covers what *this logger* writes. Playwright itself records raw values in HTML report step titles, `error-context.md`, traces, screenshots and videos, **even with traces off**. See [Known limits](#known-limits) before sharing a report.
+:::
+
+## API logging {#api-logging}
+
+Masked by default, in the logged URL, headers, bodies **and** the curl:
+
+| What | Default list |
+| --- | --- |
+| Header values | `authorization`, `cookie`, `set-cookie`, `x-api-key` |
+| Query parameter values | `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` |
+| JSON, form and multipart body keys | *(none)* |
+
+All matching is case-insensitive; body keys match at any depth.
+
+- **Add to the defaults** with `redactHeaders`, `redactQueryParams` and `redactBodyKeys`. Your lists are merged with the built-in ones (without duplicates), so adding `x-internal-token` keeps `authorization` redacted.
+- **Opt in to body masking** per key. To start from the shared sensitive-key list: `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
+- **Replace the defaults** only if you must: `replaceDefaultRedaction: true` means *only* your lists are used and a list you leave out redacts nothing.
+
+```ts
+use: {
+  apiLog: {
+    redactHeaders: ['x-internal-token'],
+    redactQueryParams: ['sig'],
+    redactBodyKeys: ['password', 'access_token', 'refreshToken'],
+  },
+}
+// → GET /search?sig=***&q=shoes   (password=… and access_token=… are still masked)
+```
+
+:::danger replaceDefaultRedaction
+With `replaceDefaultRedaction: true`, anything not in your lists is printed in clear text, including `Authorization` and `Cookie` headers. The switch also drops the browser log's default `redact.selectors` and `redact.keys` and its query-parameter masking.
+:::
+
+A redacted curl contains the literal text `***`. Replace it with the real value before replaying.
+
+## Browser logging
+
+What is masked in the browser log:
+
+| What | How |
+| --- | --- |
+| Values typed with `fill()`, `type()`, `pressSequentially()`, `keyboard.type()`/`press()` and dialog prompt answers | Masked when the **target looks sensitive**: its selector, label or placeholder matches `redact.selectors` (`password`, `passcode`, `secret`, `token`, `otp`, `pin`, `cvv`, `api key`, `type=password`, `autocomplete=current-password`, card number fields, `#totp`, ...). See [Sensitive field detection](#field-detection) for card, expiry and PAN fields. `keyboard` input is masked while the last targeted field was sensitive; a navigation resets that. |
+| Typed values that were masked | **Learned for the rest of the test.** Whatever the page echoes of such a value (console messages, page errors, network and navigation URLs including query strings, dialog text, notes, apiLog lines) is masked too, in the spellings listed under [Which spellings are masked](#spellings). Values shorter than 4 characters are never learned. The newest 256 typed secrets are remembered. |
+| Literal secrets in `redact.values` | Masked everywhere: arguments, URLs, console text, page errors, error messages, notes and apiLog lines. Values shorter than 4 characters are ignored with a warning. |
+| Secrets Playwright's options hold | `httpCredentials.password` and sensitive `extraHTTPHeaders` values are added automatically. Cookie values from `addCookies`, sensitive header values from `setExtraHTTPHeaders` and `setHTTPCredentials` passwords are learned at runtime. For `Authorization: Bearer X` (also `Basic`, `Token`, ...) both the whole value and the bare token are learned (`Basic` also its decoded password); a `Cookie` header yields each cookie value. |
+| Object keys inside arguments (`evaluate` args, option bags) | Keys matching `redact.keys` (`password`, `token`, `secret`, `api_key`, `authorization`, `cookie`, ...). |
+| URLs | The password in `https://user:pass@host` is always masked, and so are the values of **sensitive query parameters** (`api_key`, `apikey`, `token`, `access_token`, `password`, `secret`: the same logic and default list as apiLog's `redactQueryParams`) in every URL the browser log prints: `goto` and other arguments, navigations and redirect targets, popups, downloads, network lines, and URLs inside console text and error messages. Other parameters are kept. Add names with `redact.queryParams` (or apiLog's `redactQueryParams`); `redact.values` still masks literal values on top. |
+| Headers, cookies, credentials | Same header list as apiLog's `redactHeaders`; `addCookies` values and `setHTTPCredentials` passwords always. |
+| Files and big payloads | `setInputFiles` shows file names only. `setContent` is `<html 1.2 KB>`; scripts are `<script 340 B>`. |
+
+When a masked call fails, its secret is also removed from the logged error message, since Playwright's call log can echo arguments.
+
+One sensitive-key list serves both loggers: `DEFAULT_SENSITIVE_KEYS` is the default for browserLog's `redact.keys`, and your own `redact.keys` are added to it. apiLog still redacts no body keys by default; to use the shared list there, pass `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
+
+### Which spellings are masked {#spellings}
+
+Each secret that is *learned* at runtime (values typed into a masked field, `addCookies` values, `setExtraHTTPHeaders` values, `setHTTPCredentials` passwords) is masked as the literal value and in exactly these forms. They are computed once when the secret is learned, and forms shorter than 4 characters are dropped:
+
+- **Percent-encoded:** `encodeURIComponent`, `encodeURI`, and the RFC 3986 form that also encodes `!'()*`, each with upper- or lower-case hex and with `+` for spaces.
+- **Legacy `escape()`:** `%XX` for characters below U+0100 and `%uXXXX` above, one escape per UTF-16 code unit (an emoji is `%uD83D%uDE00`), upper- or lower-case hex.
+- **JSON string bodies:** `JSON.stringify`; the same with `\/` for every slash; PHP `json_encode` defaults (`\/` plus every non-ASCII character as `\uXXXX`, a surrogate pair as two escapes); Python `json.dumps` with `ensure_ascii` (non-ASCII as `\uXXXX`, slashes left alone); and every character written as `\uXXXX`. `\u` hex is matched in lower and upper case.
+
+Values configured in `redact.values`, and the automatic ones (`httpCredentials.password`, sensitive `extraHTTPHeaders`), are masked as the **literal value only**.
+
+:::warning `httpCredentials` in `test.use`
+Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as a list of two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`.
+:::
+
+:::info Query strings
+Sensitive query parameters are masked by name in every URL the browser log prints (see *URLs* above). A secret the page puts in a URL under another parameter name needs `redact.queryParams` or `redact.values`. Response bodies that echo a query, and notes you write yourself, are outside the logger's reach.
+:::
+
+### Sensitive field detection {#field-detection}
+
+A typed value is masked when the target's selector, label or placeholder matches `redact.selectors`. Card fields are recognised by the hints a selector shows, including expiry and PAN fields:
+
+- `[autocomplete=cc-number]`, `[name=cardnumber]`, `getByLabel('Card')`, `getByLabel('Credit card')`, `#card`, `#cvc`, `#securityCode`, `#totp`
+- Expiry and PAN: `[autocomplete=cc-exp]`, `cc-exp-month`, `cc-exp-year`, `cc-csc`, `getByLabel('Expiry date')`, `getByLabel('Expiration')`, `#expDate`, `getByLabel('PAN')`, `#pan`
+- The placeholders `MM/YY` and `MM/YYYY`, and the labels "Valid thru" and "Valid through", are read as expiry fields.
+
+Matching is by **whole word**, so `company`, `panel` and "expires in" are not matched. A CSS class such as `.card` or `getByText('Card')` is not a field.
+
+**Token splitting.** Before matching, selector, name, id, placeholder and label text is also split on camelCase boundaries and on `_`, `-` and space. `#cardExpDate`, `#panNumber` and `[name=cardPAN]` are therefore detected, while `Japan`, `Company` and `Expense` keep their letters and stay clear. The splitting applies to your own `redact.selectors` as well as the defaults.
+
+### The headline recipe: `redact.values`
+
+List every secret your tests use, straight from the environment, and it is masked everywhere:
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
+
+export default defineConfig<LoggerOptions>({
+  use: {
+    browserLog: {
+      redact: {
+        values: [process.env.E2E_PASSWORD, process.env.API_TOKEN].filter((v): v is string => !!v),
+      },
+    },
+  },
+});
+```
+
+### More control
+
+- **Custom field names and keys.** `redact.selectors` and `redact.keys` are **added** to the defaults, as with apiLog's lists, so the defaults stay masked:
+
+  ```ts
+  use: { browserLog: { redact: { selectors: ['#pin-pad'], keys: ['nickname'] } } }
+  ```
+
+- **Custom query parameters.** `redact.queryParams` adds names to apiLog's `redactQueryParams` (defaults included) for the URLs the browser log prints:
+
+  ```ts
+  use: { browserLog: { redact: { queryParams: ['sig'] } } }
+  ```
+
+- **Opt out of the defaults.** `replaceDefaultRedaction: true` in the `apiLog` option replaces the built-in lists for both loggers: `redact.selectors`, `redact.keys`, and the header and query-parameter lists. This is a global switch. Dangerous: anything you leave out is then printed in clear text.
+
+  ```ts
+  use: {
+    apiLog: { replaceDefaultRedaction: true },
+    browserLog: { redact: { selectors: ['#pin-pad'] } },
+  }
+  ```
+
+- **Strict CI.** `redact: { fillValues: 'always' }` masks every typed value. `'never'` masks none (`redact.values` still applies).
+- **`inspectInputType`** (opt in). A password field whose selector, label and placeholder give no hint (`locator('#field7')` for `<input type=password>`) is not detected by the heuristics. With `redact: { inspectInputType: true }` the logger asks the page once per field after a fill succeeds and masks the value when the answer is "password", when the probe fails, or when the fill itself failed. The cost is one extra round trip per distinct field, and the probe shows up as an `evaluate` step in traces and the HTML report. If the test ends before the probe answers, the fill is reported as completed with the value still masked.
+- **Mask text** with `redact.mask`, header names with `redact.headers` (added to apiLog's list), object keys with `redact.keys` (added to the defaults).
+
+:::danger A password field that does not look like one
+`page.locator('#field7').fill('hunter2hunter2')` into an `<input type=password>` is **printed in clear text** in the browser log unless you use `inspectInputType`, `redact.values`, a `redact.selectors` entry, or `fillValues: 'always'`. Prefer `getByLabel('Password')`-style locators, and always list real secrets in `redact.values`.
+:::
+
+## Control characters
+
+Control characters in logged bodies and browser-log text are escaped (`\x1b`), so output from a server or a page cannot inject terminal escape sequences into your logs or CI viewer.
+
+<a id="limitations"></a>
+
+## Known limits {#known-limits}
+
+:::danger Masking is literal-form based
+A value is found only as its literal text or in one of the [spellings above](#spellings). These are **not** detected and appear in clear:
+
+- base64 (or any other encoding not listed above). The only base64 that is learned is the token of a `Basic` header you set, as written.
+- double encoding (`%2540`, a JSON-escaped value inside a percent-encoded URL).
+- HTML entities (`&amp;`, `&#38;`) and other markup escapes.
+- a value split across several `console.log` arguments (each argument is checked on its own) or otherwise broken up, and pieces of a value.
+- fragments typed with `keyboard.type()`/`press()` into the middle of a field: only the strings passed to a call are learned, not the field's final content, and a key pressed with `press()` is one character that is never learned.
+- cookies the server sets with `Set-Cookie` in a response. The logger only learns cookie values your test passes to `addCookies` (or a `Cookie` header it sets), so a server-set cookie value that the page or a network line echoes is not masked. Put such values in `redact.values`, or read them with `context.cookies()` and add them yourself.
+- a value that mixes escaped and literal forms (for example half of it `\u`-escaped and half plain), or mixes upper- and lower-case hex within one value (`%2f` next to `%2F`, `\u00e9` next to `\u00C9`). "Lower and upper case" means per value: each value written all-lower or all-upper.
+
+What helps: list the values (and the transformed forms you know the page produces) in `redact.values`; use `redact.selectors` and `redact.keys` for fields and keys; turn off the channels that echo values (`browserConsole: false`, and `network: false`, which is the default); and avoid logging such values in the page. Do not rely on this logger as the only barrier for real secrets.
+
+Turning off `browserConsole` and `network` does **not** cover everything else the logger records: **action lines** (a base64 value passed as an argument to `page.evaluate(...)` is printed as given), **page errors**, **dialog text** and **navigation URLs**. For these, add the encoded form to `redact.values`, or switch the channel off: `actions: false`, `pageErrors: false`, `navigation: false` (dialogs and navigation URLs are part of `navigation`).
+
+The same applies to `httpCredentials` in `test.use`: Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, so an array needs `[[a, b], { scope: 'test' }]`.
+:::
+
+:::danger Playwright-owned artifacts are outside this logger
+Masking covers what this logger outputs. Artifacts that Playwright itself writes can contain the raw values, **even with traces off** (`trace: 'off'`):
+
+- **HTML report step titles.** Playwright puts action arguments into step titles and the report keeps them: on newer versions as `Fill "<the value>"` (seen on 1.64), and on older versions some steps carry values too. Do not assume any version is clean.
+- **`error-context.md`.** For failed tests, newer Playwright versions attach a page snapshot that includes the current values of form fields (seen on 1.64).
+- **Traces, screenshots and videos**, when enabled, hold raw action parameters and page content.
+- The same raw values are visible to other reporters (`json`, `blob`, `junit`, custom ones) and in Playwright's own error messages and call logs.
+:::
+
+`redact.values`, `redact.selectors` and the other `redact` options do not affect Playwright's report, traces or snapshots. What helps:
+
+- Use **test-only credentials** instead of real secrets.
+- Keep `trace`, `screenshot` and `video` off for tests that type real secrets.
+- Do not publish or share `playwright-report/`, `test-results/` and CI artifacts of runs that type real secrets, or restrict who can open them.
+- Check your Playwright version's reporter and artifact options. Whether a given version lets you switch the HTML step titles or `error-context.md` off is up to Playwright, not this logger, and these docs do not promise it.
+
+Also remember:
+
+- Redaction is heuristic for browser input. A field the heuristics and your configuration cannot recognise is logged as typed.
+- A redacted curl has to be completed with the real values before replaying it.
+- Network capture (`network`) logs URLs, not bodies or headers.
+
+## Check your own CI for leaks
+
+Treat redaction like any other control and test it. Use a recognisable canary instead of a real secret, run a failing test that types it, and fail the build if it appears anywhere in the output you publish:
+
+```sh
+export E2E_PASSWORD='PLP-CANARY-7f3a91c2'
+npx playwright test || true
+! grep -r 'PLP-CANARY-7f3a91c2' test-results/ playwright-report/ logs/ 2>/dev/null && echo "no canary in published files"
+```
+
+Note that `playwright-report/` and `test-results/` may legitimately contain the canary (Playwright's own artifacts, see above); check the files **you** publish, and the console log.
+
+## Reporting a vulnerability
+
+Please report security issues privately through [GitHub Security Advisories](https://github.com/ijad-org/playwright-logger-pro/security/advisories/new) rather than in a public issue. See the [security policy](https://github.com/ijad-org/playwright-logger-pro/blob/main/SECURITY.md).
