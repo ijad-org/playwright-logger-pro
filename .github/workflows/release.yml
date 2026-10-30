@@ -82,9 +82,20 @@ jobs:
       - run: pnpm build
       - run: pnpm smoke
 
+      # Before Pack: `attw --pack .` packs and then deletes playwright-logger-pro-<version>.tgz in
+      # the repo root, which would remove the tarball the release attaches.
+      - run: pnpm check:pkg
+
       - name: Pack (the tarball attached to the draft release)
         run: pnpm pack # playwright-logger-pro-<version>.tgz
-      - run: pnpm check:pkg
+      - name: Exactly one tarball for this version exists
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -l playwright-logger-pro-*.tgz
+          test "$(ls playwright-logger-pro-*.tgz | wc -l)" -eq 1
+          test -f "playwright-logger-pro-${VERSION}.tgz"
 
       - name: Release notes
         run: node scripts/release-notes.mjs "$RELEASE_TAG" > release-notes.md
