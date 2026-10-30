@@ -1,6 +1,6 @@
 import { warnOnce } from '../warn';
 import {
-  MIN_LEARNED_SECRET_LENGTH, headerSecretValues, normalizeSecretValues, redactText, secretVariants,
+  MIN_LEARNED_SECRET_LENGTH, headerSecretValues, maskUrl, normalizeSecretValues, redactText, redactUrlsInText, secretVariants,
 } from '../redact';
 import { splitChars } from '../format';
 import { matchesSensitiveSelector } from './sensitive';
@@ -210,9 +210,14 @@ export class BrowserLogSession implements ActionSink {
     this.red.values = normalizeSecretValues([...this.baseValues, ...typed]);
   }
 
-  /** Redact free text: literal secrets only. */
+  /** Redact free text: literal secrets, and sensitive query parameters of any URL in it. */
   scrub(text: string): string {
-    return redactText(text, this.red.values, this.red.mask);
+    return redactText(redactUrlsInText(text, this.red.queryParams, this.red.mask), this.red.values, this.red.mask);
+  }
+
+  /** Redact one URL: userinfo password, sensitive query parameters and literal secrets. */
+  maskUrl(url: string): string {
+    return maskUrl(url, this.red.values, this.red.mask, this.red.queryParams);
   }
 
   protected scrubError(message: string, secrets: readonly string[]): string {
@@ -586,7 +591,7 @@ export class BrowserLogSession implements ActionSink {
       secrets: rendered.secrets,
       page: pageId,
       pageObj: page,
-      navUrl: spec.render === 'url' && method === 'goto' && typeof args[0] === 'string' ? args[0] : undefined,
+      navUrl: spec.render === 'url' && method === 'goto' && typeof args[0] === 'string' ? this.maskUrl(args[0]) : undefined,
       step: store?.step && store.step.length > 0 ? store.step : undefined,
       location: this.cfg.location ? callSite(getRegistry().libDirs) : undefined,
       ...(needsProbe ? { learned } : {}),

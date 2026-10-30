@@ -1,4 +1,3 @@
-import { maskUrl } from '../redact';
 import { getRegistry } from './registry';
 import { installDialogPrototype, installDownloadPrototype } from './install';
 import type { BrowserLogSession } from './session';
@@ -88,7 +87,7 @@ export function attachContextListeners(
       session.emit({
         kind: 'network',
         method: request.method(),
-        url: maskUrl(request.url(), session.values(), session.cfg.redact.mask),
+        url: session.maskUrl(request.url()),
         resourceType: request.resourceType(),
         status,
         ...(t0 !== undefined ? { durationMs: Math.round(performance.now() - t0) } : {}),
@@ -100,7 +99,7 @@ export function attachContextListeners(
       session.emit({
         kind: 'network',
         method: request.method(),
-        url: maskUrl(request.url(), session.values(), session.cfg.redact.mask),
+        url: session.maskUrl(request.url()),
         resourceType: request.resourceType(),
         failure: session.scrub(request.failure?.()?.errorText ?? 'request failed'),
         ...(t0 !== undefined ? { durationMs: Math.round(performance.now() - t0) } : {}),
@@ -147,7 +146,7 @@ export function attachPageListeners(session: BrowserLogSession, page: object, po
         event: opener ? 'popup' : 'opened',
         page: session.idFor(page),
         ...(opener ? { opener: session.idFor(opener) } : {}),
-        ...(url && url !== 'about:blank' ? { url: maskUrl(url, session.values(), cfg.redact.mask) } : {}),
+        ...(url && url !== 'about:blank' ? { url: session.maskUrl(url) } : {}),
       }, page);
     });
     void popup;
@@ -165,7 +164,7 @@ export function attachPageListeners(session: BrowserLogSession, page: object, po
     // -- main-frame navigations ----------------------------------------------
     disposers.push(listen(page, 'framenavigated', guard(session, ((frame: { url(): string; parentFrame?(): unknown }) => {
       if (frame !== p.mainFrame() && (typeof frame.parentFrame !== 'function' || frame.parentFrame() !== null)) return;
-      session.onNavigated(page, maskUrl(frame.url(), session.values(), cfg.redact.mask));
+      session.onNavigated(page, session.maskUrl(frame.url()));
     }) as Listener)));
 
     // -- downloads -----------------------------------------------------------
@@ -174,7 +173,7 @@ export function attachPageListeners(session: BrowserLogSession, page: object, po
       installDownloadPrototype(download);
       session.emit({
         kind: 'download',
-        url: maskUrl(download.url(), session.values(), cfg.redact.mask),
+        url: session.maskUrl(download.url()),
         suggestedFilename: session.scrub(download.suggestedFilename()),
       }, page);
     }) as Listener)));

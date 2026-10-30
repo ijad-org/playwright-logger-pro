@@ -1,4 +1,4 @@
-import { DEFAULT_REDACT_HEADERS, detectColorSupport, mergeNames, resolveConfig } from '../types';
+import { DEFAULT_REDACT_HEADERS, DEFAULT_REDACT_QUERY_PARAMS, detectColorSupport, mergeNames, resolveConfig } from '../types';
 import type { ApiLoggerConfig } from '../types';
 import { REDACTED, headerSecretValues, normalizeSecretValues } from '../redact';
 import { validateBrowserConfig } from './validate';
@@ -14,12 +14,23 @@ export interface BrowserRedactConfig {
   mask?: string;
   /** Masking of text-entry values (fill/type/press/...). Default 'auto'. */
   fillValues?: 'auto' | 'always' | 'never';
-  /** Matched against a target's description; strings are case-insensitive substrings. */
+  /**
+   * Matched against a target's description; strings are case-insensitive substrings.
+   * ADDED to `DEFAULT_SENSITIVE_SELECTORS` (replaced only with apiLog's `replaceDefaultRedaction: true`).
+   */
   selectors?: (string | RegExp)[];
   /** Literal secrets masked everywhere (args, URLs, console text, errors, notes). */
   values?: string[];
-  /** Object keys masked inside arguments. */
+  /**
+   * Object keys masked inside arguments. ADDED to `DEFAULT_SENSITIVE_KEYS`
+   * (replaced only with apiLog's `replaceDefaultRedaction: true`).
+   */
   keys?: (string | RegExp)[];
+  /**
+   * Extra URL query-parameter names whose values are masked, on top of apiLog's resolved
+   * `redactQueryParams` (which include DEFAULT_REDACT_QUERY_PARAMS).
+   */
+  queryParams?: string[];
   /** Extra header names masked, on top of apiLog's resolved `redactHeaders` (which include DEFAULT_REDACT_HEADERS). */
   headers?: string[];
   /** Opt-in DOM probe for type=password on fill-like calls. Default false. */
@@ -86,6 +97,8 @@ export interface ResolvedRedactConfig {
   values: string[];
   keys: (string | RegExp)[];
   headers: string[];
+  /** URL query-parameter names whose values are masked in every printed URL. */
+  queryParams: string[];
   inspectInputType: boolean;
 }
 
@@ -142,6 +155,7 @@ export const DEFAULT_BROWSER_CONFIG: Omit<ResolvedBrowserConfig, 'colors' | 'net
     values: [],
     keys: [...DEFAULT_SENSITIVE_KEY_PATTERNS],
     headers: [...DEFAULT_REDACT_HEADERS],
+    queryParams: [...DEFAULT_REDACT_QUERY_PARAMS],
     inspectInputType: false,
   },
   print: 'on-failure',
@@ -180,6 +194,20 @@ function defined<T extends object>(obj: T | undefined): Partial<T> {
   return out;
 }
 
+/** `base` followed by the `extra` patterns it does not already contain. */
+function mergePatterns(
+    base: readonly (string | RegExp)[],
+    extra: readonly (string | RegExp)[] = [],
+): (string | RegExp)[] {
+  const out = [...base];
+  for (const p of extra) {
+    if (!out.some((q) => (typeof p === 'string' ? q === p : q instanceof RegExp && q.source === p.source && q.flags === p.flags))) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 export function resolveBrowserConfig(
     input: BrowserLoggerConfig = {},
     context: ResolveContext = {},
@@ -187,12 +215,13 @@ export function resolveBrowserConfig(
   // Invalid options warn once and fall back to the defaults (nothing here throws).
   const config = validateBrowserConfig(input);
   const userRedact = defined(config.redact);
-  // One header list for both loggers: apiLog's resolved list (defaults + its
-  // extras, honouring replaceDefaultRedaction) plus browserLog's own extras.
-  const headers = mergeNames(
-      resolveConfig(context.apiLog ?? {}).redactHeaders,
-      userRedact.headers ?? [],
-  );
+  // One header and query-parameter list for both loggers: apiLog's resolved list
+  // (defaults + its extras, honouring replaceDefaultRedaction) plus browserLog's own extras.
+  const api = resolveConfig(context.apiLog ?? {});
+  const headers = mergeNames(api.redactHeaders, userRedact.headers ?? []);
+  const queryParams = mergeNames(api.redactQueryParams, userRedact.queryParams ?? []);
+  // Selectors and keys add to the defaults too, unless apiLog opted out with replaceDefaultRedaction.
+  const base = api.replaceDefaultRedaction ? { selectors: [], keys: [] } : DEFAULT_BROWSER_CONFIG.redact;
 
   const auto: unknown[] = [];
   const creds = context.httpCredentials;
@@ -216,9 +245,10 @@ export function resolveBrowserConfig(
     redact: {
       ...DEFAULT_BROWSER_CONFIG.redact,
       ...userRedact,
-      selectors: [...(userRedact.selectors ?? DEFAULT_BROWSER_CONFIG.redact.selectors)],
-      keys: [...(userRedact.keys ?? DEFAULT_BROWSER_CONFIG.redact.keys)],
+      selectors: mergePatterns(base.selectors, userRedact.selectors),
+      keys: mergePatterns(base.keys, userRedact.keys),
       headers: [...headers],
+      queryParams: [...queryParams],
       values: normalizeSecretValues([...(userRedact.values ?? []), ...auto]),
     },
   };
