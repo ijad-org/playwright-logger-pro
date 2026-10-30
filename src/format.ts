@@ -1,16 +1,38 @@
 import { createColors } from 'picocolors';
 import type { ResolvedConfig } from './types';
 import { redactUrl } from './redact';
+import { curlColorizer } from './curlPalette';
+import type { CurlColorDepth } from './curlPalette';
+import { curlColorDepth } from './env';
 
-type Colorizer = (s: string) => string;
+export type Colorizer = (s: string) => string;
 
-interface Palette {
+export interface Palette {
   method: (method: string) => Colorizer;
   status: (status: number) => Colorizer;
   dim: Colorizer;
   bold: Colorizer;
   arrowOut: Colorizer;
   arrowIn: Colorizer;
+  // The curl command uses the colours below (see curlPalette.ts). They are chosen to read on
+  // the default black and white xterm backgrounds: no white, yellow or cyan text, and no dim,
+  // which vanishes on some terminals. Flags, quotes and punctuation stay uncoloured.
+  /** The `curl` word. */
+  curl: Colorizer;
+  /** HTTP method after `-X`. */
+  curlMethod: (method: string) => Colorizer;
+  /** URL. */
+  url: Colorizer;
+  /** Query parameter name and header name. */
+  name: Colorizer;
+  /** JSON key. */
+  key: Colorizer;
+  /** JSON string. */
+  string: Colorizer;
+  /** A masked value (`***`): bold and reversed, so it stands out on any background. */
+  mask: Colorizer;
+  /** `#` notes. */
+  comment: Colorizer;
 }
 
 const identity: Colorizer = (s) => s;
@@ -19,7 +41,11 @@ const identity: Colorizer = (s) => s;
 // over picocolors' own env detection (NO_COLOR, non-TTY, ...).
 const pc = createColors(true);
 
-function palette(colors: boolean): Palette {
+/**
+ * The colours for the log lines and the curl command. The curl colours depend on how many colours
+ * the terminal shows (`depth`, detected when omitted); the log lines use the 16 basic ones.
+ */
+export function palette(colors: boolean, depth?: CurlColorDepth): Palette {
   if (!colors) {
     return {
       method: () => identity,
@@ -28,8 +54,18 @@ function palette(colors: boolean): Palette {
       bold: identity,
       arrowOut: identity,
       arrowIn: identity,
+      curl: identity,
+      curlMethod: () => identity,
+      url: identity,
+      name: identity,
+      key: identity,
+      string: identity,
+      mask: identity,
+      comment: identity,
     };
   }
+  const d = depth ?? curlColorDepth();
+  const curl = (element: Parameters<typeof curlColorizer>[0]): Colorizer => curlColorizer(element, d);
   return {
     method: (method: string) => {
       switch (method.toUpperCase()) {
@@ -51,6 +87,23 @@ function palette(colors: boolean): Palette {
     bold: pc.bold,
     arrowOut: pc.blue,
     arrowIn: pc.blue,
+    curl: pc.bold,
+    curlMethod: (method: string) => {
+      switch (method.toUpperCase()) {
+        case 'GET': return curl('methodGet');
+        case 'POST': return curl('methodPost');
+        case 'PUT':
+        case 'PATCH': return curl('methodWrite');
+        case 'DELETE': return curl('methodDelete');
+        default: return pc.bold;
+      }
+    },
+    url: curl('url'),
+    name: curl('name'),
+    key: curl('key'),
+    string: curl('string'),
+    mask: (s: string) => pc.bold(pc.inverse(s)),
+    comment: curl('comment'),
   };
 }
 

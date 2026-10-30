@@ -269,8 +269,9 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a no-op pass-through. |
-| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR`). Auto: see [Colors](#colors). |
+| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR` for the log lines; the curl follows [its own rule](#when-the-curl-is-coloured)). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
 | `curl` | `boolean \| 'on-failure'` | `false` | Print equivalent curl: never / always / only when status isn't 2xx. |
+| `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl looks and is saved: ANSI colours (`true`, `false` or `'auto'`), one option per line or a single line, and the `curl.sh` file. See [curl output](#curl-output). |
 | `logHeaders` | `boolean` | `true` | Log request/response headers. |
 | `logBody` | `boolean` | `true` | Log request/response bodies. |
 | `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters (a number >= 0; `Infinity` disables truncation). Also applies to the curl body, which then starts with a `# request body truncated…` comment. |
@@ -278,7 +279,7 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | `redactQueryParams` | `string[]` | `[]` (+ the defaults: `api_key, apikey, token, access_token, password, secret`) | **Extra** query parameter names masked with `***` in logged URLs **and** curl output. Merged with the defaults. |
 | `redactBodyKeys` | `string[]` | `[]` (no defaults) | **Extra** JSON/form body keys (and multipart field names) masked with `***` in logged request/response bodies **and** curl output. Merged with the (empty) defaults. |
 | `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only the lists you pass are used. Dangerous, see Recipes. |
-| `sink` | `(line: string) => void` | `console.log` | Redirect output (file, allure attachment, …). |
+| `sink` | `(line: string) => void` | `console.log` | Redirect output (file, allure attachment, …). With a custom `sink` and no explicit `colors`, colors default to **off**, so ANSI codes do not end up in a file. |
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs. The fixture fills it in; pass it in Option B to get absolute URLs in error lines and their curl. |
 | `extraHTTPHeaders` | `Record<string, string>` | fixture: `use.extraHTTPHeaders` | Headers the context sends with every request. They are shown in logged headers and the curl. The fixture fills it in; in Option B, pass the same headers you gave `newContext()`. |
 
@@ -299,6 +300,8 @@ If your runner or CI does not set `FORCE_COLOR` for the workers and the output i
 use: { apiLog: { colors: true } }
 ```
 
+**Custom `sink`.** When you pass a `sink` and do not set `colors`, colors default to **off** for every line (the sink may write to a file, and ANSI codes in a file are noise). An explicit `colors: true` keeps them, for a sink that feeds a terminal or a CI log that renders them. The curl has its own, stricter rule: see [When the curl is coloured](#when-the-curl-is-coloured).
+
 > **Note:** `colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), Playwright strips every ANSI code from the test stdout it forwards, so the console shows no colors even with `colors: true`. Run in a terminal, or send the lines to a `sink` (a file, an attachment): the `sink` receives them with the colors intact.
 
 Some things to know about the output:
@@ -309,11 +312,96 @@ Some things to know about the output:
 - **Binary request bodies** (a `Buffer` as `data`) are logged as `<Buffer N bytes>`.
 - **Binary responses.** Responses with a non-text content type are logged as `<binary N bytes (type)>`. Control characters in text bodies (such as terminal escape sequences) are escaped, for example `\x1b`.
 
+## curl output
+
+With `curl: true` (or `'on-failure'`) every request is followed by a command you can paste into a POSIX shell. `curlFormat` controls how it is printed:
+
+```ts
+use: { apiLog: { curl: true, curlFormat: { colors: 'auto', multiline: true, file: true } } }
+```
+
+| `curlFormat` option | Default | Effect |
+| --- | --- | --- |
+| `colors` | `'auto'` | `true` / `false` force colours on / off. `'auto'` colours only in a real terminal, outside CI and without `NO_COLOR`, on the default console sink (see [When the curl is coloured](#when-the-curl-is-coloured)). `true` is an explicit override that skips those checks. |
+| `multiline` | `true` | `false` prints the command on one line, options joined by single spaces. Comments (`# …` notes, redirect steps) stay on their own lines above the command. |
+| `file` | `true` | With the `test` fixture, collect the test's curls into a `curl.sh` file, attach it to the report and print a one-line notice. Only applies while `curl` is on. |
+
+**Colours.** `curl` is bold; the method, URL, parameter and header names, JSON keys and strings and `#` comments each have their own colour (table below); a masked `***` is bold and reversed. A JSON body gets coloured keys and strings only when it is valid JSON. Flags (`-X`, `-H`, `--data-raw`, …), the `\` continuations, quotes and punctuation keep your terminal's default colour. Colours only decorate the text: removing the ANSI codes always gives exactly the plain command, so quoting stays safe. With colours off the output is byte-for-byte the plain command.
+
+The colours are picked to read on both a black and a white terminal background: every one has a WCAG contrast of at least 4.5:1 on both in the 256-colour palette, and at least 3:1 in the 16-colour one. They are xterm's default palette indexes, so a theme that redefines the first 16 colours changes the 16-colour variant (the 256-colour cube and greys are fixed). The 256-colour codes (`38;5;N`) are used when `COLORTERM` is `truecolor`/`24bit`, `TERM` contains `256color` or the terminal reports at least 8 bits of colour; otherwise the 16 basic colours. The 16-colour palette has no green that reaches 3:1 on white, so POST and strings are not green there. Contrast of each element (black / white background):
+
+| Element | 256 colours (index, colour) | black / white | 16 colours (index, colour) | black / white |
+| --- | --- | --- | --- | --- |
+| URL, JSON key, `-X GET` | 63 `#5f5fff` | 4.57 / 4.60 | 12 `#5c5cff` | 4.43 / 4.74 |
+| Query parameter and header names | 163 `#d700af` | 4.51 / 4.66 | 5 `#cd00cd` | 4.48 / 4.69 |
+| JSON string, `-X POST` | 29 `#00875f` | 4.63 / 4.53 | 9 `#ff0000` (POST: 5 `#cd00cd`) | 5.25 / 4.00 (POST: 4.48 / 4.69) |
+| `-X PUT`, `-X PATCH` | 98 `#875fd7` | 4.65 / 4.52 | 13 `#ff00ff` | 6.70 / 3.14 |
+| `-X DELETE` | 131 `#af5f5f` | 4.62 / 4.54 | 1 `#cd0000` | 3.60 / 5.84 |
+| `#` comments | 243 `#767676` | 4.62 / 4.54 | 8 `#7f7f7f` | 5.24 / 4.00 |
+| `curl`, other methods | bold, default foreground | | bold, default foreground | |
+| Masked `***` | bold + inverse | | bold + inverse | |
+
+`npm run contrast` prints these ratios from the palette in `src/curlPalette.ts`, and a unit test fails when one drops below the limits above.
+
+### When the curl is coloured
+
+With `curlFormat.colors: 'auto'` (the default) the curl is coloured only when **all** of these hold:
+
+1. `NO_COLOR` is not set to a non-empty value. It always wins under `'auto'`, even over a top-level `colors: true`.
+2. The process is not on CI: none of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TRAVIS`, `APPVEYOR`, `TF_BUILD`, `TEAMCITY_VERSION`, `JENKINS_URL`, `BITBUCKET_BUILD_NUMBER`, `CODEBUILD_BUILD_ID`, `DRONE` is set to a value other than `0` or `false`.
+3. The output really reaches a terminal: `process.stdout` is a TTY, or the test runner's own stdout is one (see [Local runs](#local-runs-in-a-terminal-need-no-setting)), or `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`); and `TERM` is not `dumb`.
+4. The resolved [`colors`](#colors) is true and the sink is the default console sink (a custom `sink` keeps the curl plain).
+
+`FORCE_COLOR` does not count: `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe. A top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines.
+
+#### Local runs in a terminal need no setting
+
+A worker cannot see the runner's terminal, but the runner can. When a spec file imports `playwright-logger-pro` (or `/fixtures`), that import runs in the runner process, which checks whether its own stdout is a real terminal (`isatty(1)`). If it is, and the runner is not on CI, `NO_COLOR` is unset, `FORCE_COLOR`/`DEBUG_COLORS` are not `0`/`false` and `TERM` is not `dumb`, it sets `PLP_RUNNER_TTY=<runner pid>:<colour depth>` in its environment, which every worker inherits. A worker that finds its parent's pid in the variable counts the output as a terminal, and still applies every other check above (CI, `NO_COLOR`, `TERM=dumb`, the resolved `colors`, the sink). So a plain `npx playwright test` in a terminal prints a coloured curl, and `playwright test | cat`, CI and `NO_COLOR=1 npx playwright test` print a plain one.
+
+Limits:
+
+- The variable is tied to the runner's pid, so it is ignored in any process that is not a direct child of the runner. A copy inherited by a nested `playwright test` started from a test, or one you set yourself (`PLP_RUNNER_TTY=1`), does nothing. To force colours, use `PLAYWRIGHT_FORCE_TTY=1` or `curlFormat.colors: true`.
+- The package must be imported while the runner loads the spec files (an `import` at the top of a spec or of a fixture file they import). A `require()` made only inside a test body runs in the worker, too late. This holds on Playwright 1.30, 1.39, 1.48 and the latest, where the runner process loads the spec files.
+- Only a runner whose stdout is a terminal counts. Output that goes through a pipe (`| tee`, an IDE test panel, a CI step) stays plain; use `curlFormat.colors: true` if that output renders colours.
+
+`curlFormat.colors: true` is an **explicit override**: the curl is coloured whatever `NO_COLOR`, CI, the terminal, the top-level `colors` and the sink say. Use it when you know where the output goes; ANSI codes will end up in CI logs, files or a custom sink. `curlFormat.colors: false` never colours. The `curl.sh` file and its attachment are never coloured.
+
+```sh
+npx playwright test                          # in a terminal: coloured curl
+PLAYWRIGHT_FORCE_TTY=1 npx playwright test | tee run.log   # you assert the output is a terminal
+```
+
+### curl.sh
+
+With the `test` fixture, the commands a test printed are also written, plain and redacted, to `curl.sh` in the test's output directory and attached to the report as `curl.sh` (`text/plain`). The file starts with:
+
+```sh
+#!/bin/sh
+# tests/users.spec.ts:42
+# redacted curl commands of this test; run with: sh curl.sh
+```
+
+The second line is the spec file, relative to the config's `rootDir` (or the project's `testDir`), and the line of the test. **The test title is not written to the file**: titles can contain data, and Playwright keeps them in the report anyway. The location has escape sequences and control characters removed.
+
+One line goes through the sink when the file is ready, and it names no path, because Playwright derives the output folder from the test title:
+
+```
+curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)
+```
+
+Turn the file off with `curlFormat: { file: false }`. It is written at the end of the test, passed or failed, and only if at least one curl was produced (`curl: 'on-failure'` with only 2xx responses produces none). The file follows `multiline`.
+
+**Redaction.** The printed curl, `curl.sh` and its attachment use the same builder and the same redaction lists (`redactHeaders`, `redactQueryParams`, `redactBodyKeys`), so a masked value is `***` everywhere. There is no switch that writes unredacted values; fill the real ones in before replaying. `redactBodyKeys` is **empty by default**: configure it for the body keys of your API (it masks JSON and form keys and multipart field names only; XML and other raw text bodies are not scrubbed). Playwright's own HTML report step titles show the full request URLs of `request.get(...)` calls; the logger cannot mask them (see [Secrets & redaction](#secrets--redaction)).
+
+```sh
+sh curl.sh   # after replacing the *** placeholders
+```
+
 ## curl limitations
 
 The curl is meant to be pasted into a terminal to replay the request. Keep in mind:
 
-- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh`, and lines are continued with `\`. The command will not work as-is in PowerShell or `cmd.exe`.
+- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh`, and lines are continued with `\` (not with `curlFormat: { multiline: false }`). The command will not work as-is in PowerShell or `cmd.exe`.
 - **Redacted values are sent literally.** A masked header, query parameter or body key is sent as the text `***`. Put the real value back before replaying.
 - **Truncated bodies are incomplete.** When the request body is longer than `maxBodyLength`, the curl body is cut too, and the command starts with a `# request body truncated…` comment. Raise `maxBodyLength` to get a body that replays in full.
 - **Binary bodies are read from a file.** A `Buffer` body cannot be pasted into a shell, so the curl sends `--data-binary '@request-body.bin'` and starts with a `# binary request body (N bytes) is not included…` comment. Save the bytes as `request-body.bin` in the current directory first.
@@ -393,6 +481,7 @@ To use *only* your own lists, set `replaceDefaultRedaction: true` in the `apiLog
 > **Limitation: Playwright-owned artifacts are outside this logger.** Masking covers what *this logger* outputs (console block, attachment, files, events, sink). Artifacts that Playwright itself writes can contain the raw values, **even with traces off** (`trace: 'off'`):
 >
 > - **HTML report step titles.** Playwright puts action arguments into step titles, and the report keeps them: on newer versions as `Fill "<the value>"` (seen on 1.64), and on older versions some steps carry values too. Do not assume any version is clean.
+> - **Request URLs in step titles.** The steps of `request.get(...)` and the other `APIRequestContext` calls show the full request URL in Playwright's HTML report, query string included. The logger cannot mask them: keep secrets out of URLs (send them in headers or the body) or do not share the report.
 > - **`error-context.md`.** For failed tests newer Playwright versions attach a page snapshot that includes the current values of form fields (seen on 1.64).
 > - **Traces, screenshots and videos** (when enabled) hold raw action parameters and page content.
 > - The same raw values are visible to other reporters (`json`, `blob`, `junit`, custom ones) and in Playwright's own error messages and call logs.

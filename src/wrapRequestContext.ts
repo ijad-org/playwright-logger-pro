@@ -114,6 +114,15 @@ function isHttpMethod(prop: string | symbol): prop is HttpMethod {
   return typeof prop === 'string' && (HTTP_METHODS as readonly string[]).includes(prop);
 }
 
+/** Hooks for the `test` fixture; not part of the public API. */
+export interface WrapInternals {
+  /**
+   * Called with each curl command in its plain form (no colours, same redaction),
+   * for the `curl.sh` file. Not called with `curlFormat.file: false`.
+   */
+  onCurl?: (plain: string) => void;
+}
+
 /**
  * Wrap a Playwright APIRequestContext so every request logs a colorful
  * request/response summary (and optionally the equivalent curl command)
@@ -123,6 +132,7 @@ function isHttpMethod(prop: string | symbol): prop is HttpMethod {
 export function wrapRequestContext(
     context: APIRequestContext,
     config: ApiLoggerConfig = {},
+    internals: WrapInternals = {},
 ): APIRequestContext {
   const cfg = resolveConfig(config);
   if (!cfg.enabled) return context;
@@ -171,7 +181,7 @@ export function wrapRequestContext(
       const cookie = headerValue(headers, 'cookie') === undefined && cookiesBefore ?
         cookieHeaderFor(requestedUrl, cookiesBefore) :
         undefined;
-      log(buildCurl({
+      const info = {
         method: httpVerb,
         url: requestedUrl,
         headers: cookie ? { ...headers, Cookie: cookie } : headers,
@@ -182,11 +192,20 @@ export function wrapRequestContext(
         redirects,
         cookieFromJar: cookie !== undefined,
         playwrightVersion: redirects ? detectPlaywrightVersion() : undefined,
-      }, cfg.redactHeaders, {
+      };
+      const curlOptions = {
         redactQueryParams: cfg.redactQueryParams,
         redactBodyKeys: cfg.redactBodyKeys,
         maxBodyLength: cfg.maxBodyLength,
-      }));
+        multiline: cfg.curlFormat.multiline,
+      };
+      const colored = cfg.curlFormat.colors;
+      const shown = buildCurl(info, cfg.redactHeaders, { ...curlOptions, colors: colored });
+      log(shown);
+      // Same builder and redaction lists, never coloured.
+      if (internals.onCurl && cfg.curlFormat.file) {
+        internals.onCurl(colored ? buildCurl(info, cfg.redactHeaders, curlOptions) : shown);
+      }
     };
 
     const started = Date.now();
