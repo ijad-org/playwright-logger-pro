@@ -1,6 +1,6 @@
 {
   "name": "playwright-logger-pro",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Colorful API and browser-action logging for Playwright: APIRequestContext requests with optional curl output, and a per-test browser timeline with secret redaction",
   "author": "Shahul Hameed M Y (https://linkedin.com/in/shahulhameedmy)",
   "license": "MIT",
