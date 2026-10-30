@@ -66,15 +66,6 @@ const install = prerelease ?
     '```',
   ];
 
-const supply = prerelease ?
-  [] :
-  [
-    '## Supply chain',
-    '',
-    `Published from GitHub Actions with npm provenance: https://www.npmjs.com/package/${pkg.name}/v/${version} (see "Provenance").`,
-    '',
-  ];
-
 // A release's own "Known limitations" section (in the CHANGELOG) replaces the standing list.
 const limitations = /^#{2,4}\s+Known limitations\s*$/im.test(changes) ?
   [] :
@@ -105,7 +96,6 @@ const notes = [
   `3. Read the behaviour changes above and the migration guide: ${docsUrl}docs/migration`,
   '',
   ...limitations,
-  ...supply,
   `**Full changelog:** ${repoUrl}/blob/${tag}/CHANGELOG.md`,
   '',
 ];

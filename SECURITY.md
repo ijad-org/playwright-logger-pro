@@ -17,3 +17,10 @@ Known limits are documented and are not vulnerabilities: Playwright's own artifa
 ## Supported versions
 
 Only the latest release receives fixes.
+
+## Release and publishing policy
+
+- npm publishing never happens from GitHub. No `NPM_TOKEN` secret and no npm trusted publisher (OIDC) may be added to this repository or its environments, and no workflow may publish to npm.
+- A `vX.Y.Z` tag push only verifies and packs the release and creates a **draft** GitHub release for review.
+- The maintainer publishes locally, from a clean checkout of the tag, with `npm publish --auth-type=web` (npm web 2FA approval each time), and only after LQA gives GO and Abdul explicitly says yes.
+- If you find an npm publish token or a publish workflow in this repository, report it as described above.

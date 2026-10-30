@@ -1,30 +1,20 @@
 name: Release
 
-# Nothing here publishes to npm on a push.
+# Nothing in this workflow publishes to npm. There is no NPM_TOKEN, no npm trusted publisher
+# (OIDC) and no publish job, and none may be added.
 #
 #   - Push a tag v<version> from a commit on main whose package.json version matches the tag
 #     (v0.2.0, or v0.2.0-rc.1 for a release candidate):
 #       * verify: lint, type-check, tests, build, pack, package checks; the tarball is uploaded as
 #         an artifact of the run.
-#       * a pre-release tag (version contains "-") also creates a GitHub pre-release with the
-#         tarball attached. Nothing is published to npm.
-#       * a stable tag stops after verify.
-#   - To publish a stable version, start this workflow by hand: Actions -> Release -> Run workflow,
-#     and under "Use workflow from" pick the vX.Y.Z tag (not main), then enter the same tag in the
-#     input. The npm-publish environment only accepts v* tag refs, so a run started from a branch
-#     is rejected there; the publish job also fails if the selected ref is not the entered tag.
-#     After verify, the publish job waits for approval of the npm-publish environment (configure
-#     required reviewers in the repository settings), publishes the tarball to npm with
-#     provenance, and then creates the GitHub Release.
+#       * the release job creates a DRAFT GitHub release with the tarball attached (a draft
+#         pre-release when the version contains "-").
+#   - The maintainer reviews the draft. After LQA gives GO and Abdul says yes, the maintainer
+#     publishes locally from a clean checkout of the tag with `npm publish --auth-type=web`
+#     (npm web 2FA approval each time), then publishes the draft. See CONTRIBUTING.md ("Releasing").
 on:
   push:
     tags: ['v*.*.*']
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing stable tag to verify and publish to npm (for example v0.2.0). Must be the same tag picked under "Use workflow from".'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -34,8 +24,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The tag being released: the pushed tag, or the tag typed into the manual run.
-  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # The pushed tag.
+  RELEASE_TAG: ${{ github.ref_name }}
 
 jobs:
   verify:
@@ -47,7 +37,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0 # the main-branch ancestry check needs history
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0 (reads packageManager from package.json)
@@ -78,10 +67,6 @@ jobs:
           fi
           PRERELEASE=false
           case "$V" in *-*) PRERELEASE=true ;; esac
-          if [ "$PRERELEASE" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            echo "::error::Pre-release versions are never published to npm; push the tag to get a GitHub pre-release"
-            exit 1
-          fi
           # Accept "## 0.2.0" and "## [0.2.0] - 2026-01-12" (Keep a Changelog) headings.
           VRE=${V//./\\.}
           if [ "$PRERELEASE" = false ] && ! grep -Eq "^## (\[${VRE}\]( - [0-9]{4}-[0-9]{2}-[0-9]{2})?|${VRE})[[:space:]]*$" CHANGELOG.md; then
@@ -97,7 +82,7 @@ jobs:
       - run: pnpm build
       - run: pnpm smoke
 
-      - name: Pack (the exact file that is published)
+      - name: Pack (the tarball attached to the draft release)
         run: pnpm pack # playwright-logger-pro-<version>.tgz
       - run: pnpm check:pkg
 
@@ -112,61 +97,9 @@ jobs:
             release-notes.md
           if-no-files-found: error
 
-  publish-npm:
-    name: publish to npm
-    needs: verify
-    # Only a manual run of a stable tag can publish; a tag push never does.
-    if: github.event_name == 'workflow_dispatch' && needs.verify.outputs.prerelease == 'false'
-    runs-on: ubuntu-latest
-    # Protected environment: the human publish approval. In Settings -> Environments create
-    # `npm-publish` with required reviewers and a deployment rule limited to `v*` tags.
-    # NPM_TOKEN must be an environment secret of `npm-publish`, never a repository-level secret
-    # (a repo secret would let an edited workflow publish without the reviewers). This workflow
-    # never prints it.
-    environment: npm-publish
-    permissions:
-      contents: read
-      id-token: write # npm provenance
-    steps:
-      # The run must have been started from the tag it publishes ("Use workflow from" = the tag,
-      # not main). Both values go through env, never inline into the script.
-      - name: Run ref is the release tag
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-          RUN_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          if [ "$RUN_REF" != "refs/tags/$INPUT_TAG" ]; then
-            echo "::error::Started from '$RUN_REF' but publishing '$INPUT_TAG'. Run workflow again and pick the tag $INPUT_TAG under 'Use workflow from' (not main)."
-            exit 1
-          fi
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      # Publishes the tarball that publint, attw and the smoke tests checked. No lifecycle scripts run.
-      #
-      # Switching to npm trusted publishing (OIDC) after the first release: add this repository,
-      # release.yml and the npm-publish environment as a trusted publisher in the package settings
-      # on npmjs.com, then delete the `env:` block below (NODE_AUTH_TOKEN), delete the NPM_TOKEN
-      # secret and revoke the token. Keep `id-token: write` and `--provenance`.
-      - name: Publish
-        run: npm publish ./playwright-logger-pro-*.tgz --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
   github-release:
-    name: create GitHub Release
-    needs: [verify, publish-npm]
-    # A pre-release tag push gets a GitHub pre-release; a stable tag gets its Release only after
-    # npm accepted the publish.
-    if: >-
-      always() && needs.verify.result == 'success' &&
-      ((github.event_name == 'push' && needs.verify.outputs.prerelease == 'true') ||
-       needs.publish-npm.result == 'success')
+    name: create draft GitHub Release
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -174,12 +107,13 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release
-      - name: gh release create
+      # A draft is only visible to maintainers; the maintainer publishes it after the npm release.
+      - name: gh release create --draft
         env:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
         run: |
           set -euo pipefail
-          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$RELEASE_TAG" --notes-file release-notes.md)
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$RELEASE_TAG" --notes-file release-notes.md)
           if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
           gh release create "$RELEASE_TAG" playwright-logger-pro-*.tgz "${args[@]}"

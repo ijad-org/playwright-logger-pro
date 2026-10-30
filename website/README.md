@@ -29,7 +29,7 @@ Offline: `@easyops-cn/docusaurus-search-local` builds a lunr index at build time
 
 ## Releasing the library
 
-Tag `vX.Y.Z` on `main`, then publish a stable version from Actions -> Release -> Run workflow: under "Use workflow from" pick the `vX.Y.Z` tag (not `main`) and enter the same tag in the input. The `npm-publish` environment only allows `v*` tag refs. Full steps in [CONTRIBUTING.md](../CONTRIBUTING.md#releasing).
+Tag `vX.Y.Z` on `main`: the Release workflow only verifies, packs and creates a draft GitHub release. Nothing is published to npm from GitHub; the maintainer publishes locally with `npm publish --auth-type=web` after LQA GO and an explicit yes. Full steps in [CONTRIBUTING.md](../CONTRIBUTING.md#releasing).
 
 ## Preview phase
 
