@@ -26,12 +26,12 @@ The option tables on this page are compared with the library's option types and 
 ## Precedence and merge rules {#precedence}
 
 - **`test.use()` replaces the whole object.** `test.use({ apiLog: { curl: true } })` replaces the `apiLog` from your config; it does not merge. Repeat the options you still want. The same holds for `browserLog`.
-- **`redact` is merged one level deep** with the defaults: setting `redact: { values: [...] }` keeps the default `selectors`, `keys` and the rest. Setting `redact.selectors` or `redact.keys` **replaces** that list.
+- **`redact` is merged one level deep** with the defaults: setting `redact: { values: [...] }` keeps the default `selectors`, `keys` and the rest. Setting `redact.selectors` or `redact.keys` **adds** to the defaults; `apiLog.replaceDefaultRedaction: true` replaces them.
 - **`undefined` means the default.** An option explicitly set to `undefined` uses its default, which lets you write `colors: process.env.CI ? true : undefined`.
 - **Explicit `colors` wins** over every colour environment variable.
 - **Invalid values never throw.** An unknown option or invalid value prints a one-time `[playwright-logger-pro]` warning naming the option, and the default is used. (`maxEvents` must be a positive integer so a bad value can never switch the failure block off.)
 - **`httpCredentials` arrays.** Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`.
-- **apiLog redaction lists are merged** with the built-in lists; see [`replaceDefaultRedaction`](#apilog-options).
+- **Redaction lists are merged** with the built-in lists, in apiLog and in browserLog's `redact`; see [`replaceDefaultRedaction`](#apilog-options), the one switch that drops the defaults of both.
 
 ## apiLog options {#apilog-options}
 
@@ -49,7 +49,7 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | `redactHeaders` | `string[]` | `[]` plus the built-in `authorization`, `cookie`, `set-cookie`, `x-api-key` | **Extra** header names masked in logs and curl. Case-insensitive; merged with the defaults. |
 | `redactQueryParams` | `string[]` | `[]` plus the built-in `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` | **Extra** query parameter names masked in logged URLs and curl. Merged with the defaults. |
 | `redactBodyKeys` | `string[]` | `[]` (no built-in keys) | **Extra** JSON/form body keys and multipart field names masked in logged bodies and curl, at any depth. |
-| `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only your lists are used, and a list you leave out redacts nothing. Dangerous. |
+| `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only your lists are used, and a list you leave out redacts nothing. Also applies to `browserLog.redact` (`selectors`, `keys`, `queryParams`, `headers`). Dangerous. |
 | `sink` | `(line: string) => void` | `console.log` | Where log lines go. A throwing sink warns once and falls back to `console.log`. |
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs and the original URL of redirected requests. The fixture fills it in; pass it yourself with `wrapRequestContext()`. |
 | `extraHTTPHeaders` | `Record<string, string>` | fixture: `use.extraHTTPHeaders` | Headers the context sends with every request, shown in logged headers and curl. The fixture fills it in; with `wrapRequestContext()` pass the headers you gave `newContext()`. |
@@ -93,9 +93,10 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | --- | --- | --- | --- |
 | `mask` | `string` | `'***'` | Replacement for masked values. |
 | `fillValues` | `'auto' \| 'always' \| 'never'` | `'auto'` | Masking of typed values. `'auto'`: when the target looks sensitive. `'always'`: every typed value. `'never'`: none (`values` still applies). |
-| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description; strings are case-insensitive substrings. **Replaces** the default list; spread the default to extend it. Text is also matched after splitting on camelCase, `_` and `-`, for your own entries too. |
+| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description; strings are case-insensitive substrings. **Added** to the default list; `apiLog.replaceDefaultRedaction: true` replaces it. Text is also matched after splitting on camelCase, `_` and `-`, for your own entries too. |
 | `values` | `string[]` | `[]` | Literal secrets masked everywhere, in addition to the ones collected automatically. Values shorter than 4 characters are ignored. |
-| `keys` | `(string \| RegExp)[]` | the sensitive key patterns | Object keys masked inside arguments. **Replaces** the default patterns. |
+| `keys` | `(string \| RegExp)[]` | the sensitive key patterns | Object keys masked inside arguments. **Added** to the default patterns; `apiLog.replaceDefaultRedaction: true` replaces them. |
+| `queryParams` | `string[]` | apiLog's resolved list: `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` plus your `apiLog.redactQueryParams` | Extra query parameter names, added to apiLog's `redactQueryParams` (defaults included). Their values are masked in every URL the browser log prints. |
 | `headers` | `string[]` | apiLog's resolved list: `authorization`, `cookie`, `set-cookie`, `x-api-key` plus your `apiLog.redactHeaders` | Extra header names, added to apiLog's `redactHeaders` (defaults included). |
 | `inspectInputType` | `boolean` | `false` | Opt-in DOM probe for `type=password` after a fill. One extra round trip per distinct field. |
 
@@ -204,7 +205,6 @@ These decide the default for `colors` (both loggers) when you do not set it, in 
 
 ```ts title="playwright.config.ts"
 import { defineConfig } from '@playwright/test';
-import { DEFAULT_SENSITIVE_SELECTORS } from 'playwright-logger-pro';
 import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
 
 export default defineConfig<LoggerOptions>({
@@ -222,7 +222,7 @@ export default defineConfig<LoggerOptions>({
       fileDir: 'logs/browser',
       redact: {
         values: [process.env.E2E_PASSWORD].filter((v): v is string => !!v),
-        selectors: [...DEFAULT_SENSITIVE_SELECTORS, '#pin-pad'],
+        selectors: ['#pin-pad'],
       },
     },
   },
@@ -234,7 +234,6 @@ export default defineConfig<LoggerOptions>({
 
 ```js title="playwright.config.js"
 const { defineConfig } = require('@playwright/test');
-const { DEFAULT_SENSITIVE_SELECTORS } = require('playwright-logger-pro');
 
 module.exports = defineConfig({
   use: {
@@ -244,7 +243,7 @@ module.exports = defineConfig({
       network: 'failed',
       redact: {
         values: [process.env.E2E_PASSWORD].filter(Boolean),
-        selectors: [...DEFAULT_SENSITIVE_SELECTORS, '#pin-pad'],
+        selectors: ['#pin-pad'],
       },
     },
   },
