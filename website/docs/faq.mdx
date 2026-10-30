@@ -1,0 +1,70 @@
+---
+title: FAQ
+description: Frequently asked questions about Playwright Logger Pro.
+---
+
+# FAQ
+
+## Does it change test behaviour?
+
+No. It records and prints; it does not retry, wait, reorder or swallow anything. Requests return the same response objects; `page`, `locator` and `expect(locator)` keep their identity. Errors are rethrown unchanged. If the logger itself fails, it disables itself for that test and prints one warning.
+
+## Is it safe with production secrets?
+
+The logger masks secrets in its **own** output by default. Playwright's report, traces, screenshots and `error-context.md` can still contain raw values, and masking inside the browser log is literal-form based (base64, double encoding, HTML entities, split values and server-set `Set-Cookie` values are not detected). Use test-only credentials and read [Redaction & security](./redaction-security.mdx#known-limits).
+
+## Why is my `httpCredentials` array not used as I expect?
+
+Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as a list of two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`. The logger collects every password in the resolved array (see [Redaction & security](./redaction-security.mdx#known-limits)).
+
+## Does turning off `browserConsole` and `network` stop all echoing of a secret?
+
+No. Action lines (for example a base64 value passed to `page.evaluate`), page errors, dialog text and navigation URLs are still recorded. Add the encoded form to `redact.values`, or use `actions: false`, `pageErrors: false` or `navigation: false`. See [Redaction & security](./redaction-security.mdx#known-limits).
+
+## Which card fields are detected?
+
+Card number, CVC, expiry (`cc-exp`, `cc-exp-month`, `cc-exp-year`, "Expiry date", "Expiration", `MM/YY` and `MM/YYYY` placeholders, "Valid thru" / "Valid through") and PAN fields, including camelCase and `_`/`-` names such as `#cardExpDate`. See [Sensitive field detection](./redaction-security.mdx#field-detection).
+
+## Are traces redacted?
+
+No. Traces, HTML report step titles, `error-context.md`, screenshots and videos are written by Playwright, and `redact.*` does not affect them.
+
+## Does it work in plain JavaScript projects?
+
+Yes. Use `require('playwright-logger-pro/fixtures')` or ESM `import`. Types are optional.
+
+## Can I use it with the Playwright Library (no test runner)?
+
+Yes, partly. `wrapRequestContext()` works with any `APIRequestContext`, and `attachBrowserLogger(pageOrContext)` records a page or context you manage; both print live to `sink`. The `test` fixtures, attachments and failure blocks need `@playwright/test`.
+
+## Is `page.request` / `context.request` logged?
+
+Not by the browser log. Wrap the context with `wrapRequestContext(page.request)` if you need those calls logged.
+
+## Why patch prototypes instead of wrapping objects?
+
+Wrapping objects changes identity (`page !== context.pages()[0]`, broken `instanceof`) and misses objects Playwright creates. Instrumenting the public async methods once per worker on the prototypes keeps every object as it was, logs delegated calls once, and costs nothing for code paths you do not use.
+
+## What is the overhead?
+
+Browser logging adds a small amount of work per call and nothing to the protocol unless you opt in to `network` or `inspectInputType`. The repository has an informational benchmark (`npm run perf`); measure on your own suite if it matters.
+
+## Why is nothing printed when my test passes?
+
+By design: browser logging is quiet unless the test fails. Use `print: true` for a live timeline.
+
+## Does it collect telemetry?
+
+No. The library makes no network requests of its own, and this site has no analytics. The docs search runs entirely in your browser from a static index.
+
+## Is it affiliated with Playwright or Microsoft?
+
+No. Playwright Logger Pro is an independent open-source project. It is not affiliated with or endorsed by Microsoft or the Playwright project. "Playwright" is used only to describe what the tool works with.
+
+## What licence is it under?
+
+MIT. See the [LICENSE](https://github.com/ijad-org/playwright-logger-pro/blob/main/LICENSE).
+
+## Where do I report a bug or a vulnerability?
+
+Bugs: [GitHub issues](https://github.com/ijad-org/playwright-logger-pro/issues). Vulnerabilities: privately, through GitHub Security Advisories; see the [security policy](https://github.com/ijad-org/playwright-logger-pro/blob/main/SECURITY.md).

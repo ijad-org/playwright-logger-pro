@@ -1,0 +1,196 @@
+---
+title: Browser logging
+description: A per-test timeline of what the test did in the browser, printed and attached to the report when a test fails.
+---
+
+# Browser logging
+
+Browser logging records what a test does in the browser and renders it as a timeline with a duration for every action. It is configured with the `browserLog` option and is **on by default, but quiet**.
+
+## Zero configuration
+
+```ts title="tests/login.spec.ts"
+import { test, expect } from 'playwright-logger-pro/fixtures';
+
+test('rejects a wrong password', async ({ page }) => {
+  await page.goto('/login');
+  await test.step('Log in', async () => {
+    await page.getByLabel('Email').fill('jo@example.com');
+    await page.getByLabel('Password').fill(process.env.E2E_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  });
+  await page.locator('.toast-success').click({ timeout: 5000 });
+});
+```
+
+While the test passes, nothing is printed or attached. When it **fails**, one block is printed and the same text is attached to the report as `browser-log`:
+
+<TerminalOutput sample="browser-failure" title="login.spec.ts · rejects a wrong password · failed" />
+
+"Failed" means the test's status differs from its expected status, so `test.fail()` works as you would expect, and timeouts and interruptions count as failures. Tests without any browser activity (API-only tests) produce no output.
+
+:::warning Behaviour change in 0.2.0
+`browserLog` is enabled for everyone who imports `test` from `playwright-logger-pro/fixtures`. Opt out for a project or suite with `browserLog: { enabled: false }`. When disabled, no page-level patch or listener is installed for that test.
+:::
+
+## Timeline anatomy
+
+Each line is `+seconds  event`, relative to the start of the test.
+
+| Mark | Meaning |
+| --- | --- |
+| `✓` / `✗` | An action finished / threw. A failed one shows the error name and first line of its message. |
+| `⧗ ... still pending after Nms` | An action that never settled before the test timed out. |
+| `▸ title` / `◂ title  passed 84ms` | `test.step` start and end (Playwright 1.48+). Lines between them are indented with `│`. |
+| `↪ url` | A main-frame navigation. |
+| `page#1 opened`, `popup opened from page#1`, `closed`, `crashed` | Page lifecycle. A page number is shown once the test has more than one page. |
+| `⚠ console.error  text  (file:line)` | A console message at or above `browserConsole`. |
+| `✗ pageerror  message` | An uncaught exception in the page, with the first stack frames. |
+| `↔ network GET url 200  12ms` / `✗ network ... 404` | Network events, only with `network` on. |
+| `◇ dialog confirm "Delete?"`, `⤓ download "report.pdf"` | Dialogs and downloads. |
+| `✎ note` | A note you added with `browserLogger.note()`. |
+| `… N earlier events dropped (maxEvents)` | The ring buffer overflowed. |
+
+Slow actions (over `slowActionMs`, default 1000) show their duration highlighted. The timeline is chronological: an action sits at the time it *started*, followed by what happened while it ran (a dialog it opened, a page it closed).
+
+## What is logged
+
+- Actions on `page`, frames, locators, element handles, `keyboard`, `mouse`, `touchscreen`, `clock`, `context` and `browser`.
+- Main-frame navigations, pages opening and closing, popups, downloads and dialogs.
+- Console messages (warnings and errors by default), uncaught page errors, and optionally network traffic.
+- `test.step` boundaries and the step each action ran in.
+
+**Not logged:** `expect()` assertions, return values of queries, `page.request` / `context.request` traffic, route handler calls, workers, and screenshots or videos (Playwright records those itself).
+
+## Choosing what is recorded
+
+| Option | Effect |
+| --- | --- |
+| `actions` (default `true`) | Interactions and navigations: `click`, `fill`, `goto`, ... |
+| `waits` (default `true`) | `waitFor*`, `locator.waitFor`, `waitForTimeout`. |
+| `queries` (default `false`) | Read-only async calls such as `textContent`, `isVisible`, `count`. The result is never logged. |
+| `mouseMoves` (default `false`) | `mouse.move`, which is noisy. |
+| `navigation` (default `true`) | Navigations, page lifecycle, dialogs and downloads. |
+| `browserConsole` (default `'warning'`) | `false`, `'error'`, `'warning'`, `'info'` or `'all'`: the minimum level recorded. |
+| `pageErrors` (default `true`) | Uncaught page exceptions. |
+| `network` (default `false`) | `'failed'` (request failures and status ≥ 400), `'documents'` (document, xhr and fetch) or `'all'`. Subscribing adds protocol traffic, so it is off by default. `networkFilter` narrows it further. |
+| `slowActionMs` (default `1000`) | Highlight actions slower than this. |
+| `location` (default `false`) | Append the call site in your spec, such as `(login.spec.ts:14)`. Costs one stack capture per action. |
+| `maxArgLength` (default `200`) | Truncate each rendered argument and console message. |
+| `maxEvents` (default `5000`) | Ring buffer size per test. |
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
+
+export default defineConfig<LoggerOptions>({
+  use: {
+    browserLog: {
+      network: 'failed',        // request failures and 4xx/5xx responses
+      browserConsole: 'error',  // only console.error
+      location: true,           // add (file:line) to each action
+    },
+  },
+});
+```
+
+## Live output locally, quiet in CI
+
+`print: true` prints each line as it happens. Combined with an environment check you get a live timeline on your machine and the quiet failure block in CI:
+
+```ts
+use: {
+  browserLog: {
+    print: process.env.CI ? 'on-failure' : true,
+  },
+}
+```
+
+<TerminalOutput sample="browser-live" title="print: true, network: 'failed'" />
+
+With `print: true` the line of a running action is printed when it finishes, and lines that follow it are held until then, so live output has the same order as the failure block. Use `logStart: true` for an immediate "started" line.
+
+## Several pages and popups
+
+When a test uses more than one page, lines carry a page number (`page#2`), and a popup is reported as `page#2 popup opened from page#1`. Pages created with `context.newPage()` and `browser.newPage()` inside a test join the test's timeline automatically.
+
+## Dialogs and downloads
+
+Dialogs are shown as `◇ dialog <type> "<message>"`. A single listener repeats Playwright's default (dismiss the dialog) when no other handler takes it, so a missing handler never hangs a test. Downloads are shown with their suggested file name.
+
+## Steps {#steps}
+
+:::info Playwright ≥ 1.48
+`test.step` markers and the step path of each action need Playwright 1.48 or newer. Older versions cannot keep the step's source location, so the integration is off there (`steps: 'auto'`); actions are still logged, without step markers.
+:::
+
+`steps: 'auto'` (the default) turns the integration on for Playwright 1.48+. `steps: false` turns it off. Step locations in the HTML report and trace viewer point at your spec file, not at this library.
+
+## Notes and events from your test
+
+The `browserLogger` fixture gives your test access to its own timeline:
+
+```ts
+test('seeds a user', async ({ page, browserLogger }) => {
+  browserLogger.note('seeded user 42');   // masked like everything else
+  await page.goto('/users/42');
+
+  const events = browserLogger.events();  // redacted, structured events so far
+  const text = browserLogger.render();    // the timeline as plain text
+  const jsonl = browserLogger.render('jsonl');
+});
+```
+
+| Method | Returns |
+| --- | --- |
+| `note(message)` | Adds a `✎` line to the timeline. |
+| `events()` | `readonly BrowserLogEvent[]`, already redacted. |
+| `render(format?)` | The timeline as plain text (never ANSI) or JSONL. |
+| `detach()` | Stops recording for the objects attached through this handle. |
+
+## Pages you manage yourself
+
+Pages created outside a fixture (`beforeAll`, scripts, global setup) are not recorded unless you attach them:
+
+```ts
+import { test } from 'playwright-logger-pro/fixtures';
+import { attachBrowserLogger } from 'playwright-logger-pro';
+import type { Page } from '@playwright/test';
+
+let page: Page;
+
+test.beforeAll(async ({ browser }) => {
+  page = await browser.newPage();
+  attachBrowserLogger(page); // its events go to whichever test is running
+});
+```
+
+Inside a test that uses the fixtures, the object joins that test's timeline and follows its `print`/`attach`/`file` rules. Elsewhere the returned handle prints live to `sink`.
+
+## Extending `test`
+
+Use `.extend()` on our `test`, or our `mergeTests` (Playwright 1.39+), and the step integration survives:
+
+```ts title="fixtures.ts"
+import { test as base, mergeTests } from 'playwright-logger-pro/fixtures';
+import { test as dbTest } from './db-fixtures';
+
+export const test = mergeTests(base, dbTest);
+```
+
+Merging through Playwright's own `mergeTests` still logs actions, just without step markers.
+
+## Turn it off
+
+```ts
+test.use({ browserLog: { enabled: false } });
+```
+
+## Performance and guarantees
+
+- The public async methods of Playwright's classes are instrumented **once per worker, on the prototypes**. Objects are never wrapped, so `page === context.pages()[0]`, `instanceof` and `expect(locator)` behave exactly as before, and delegated calls (`locator.click` → `frame.click`) are logged once.
+- Nothing is added to the protocol unless you opt in to `network` or `redact.inspectInputType`.
+- The logger never deletes folders and never fails a test because of its own errors; it disables itself for that test and prints one warning.
+- Wrapper frames are hidden from Playwright's stack attribution, so step and error locations stay in your spec.
+
+See [Compatibility](./compatibility.mdx) for version-specific behaviour and [Reporter & attachments](./reporter-attachments.mdx) for what is written where.

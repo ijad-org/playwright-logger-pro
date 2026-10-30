@@ -1,0 +1,14 @@
+{
+  "name": "Playwright Logger Pro",
+  "short_name": "PLP",
+  "description": "Readable API and browser-action logs for your Playwright tests",
+  "start_url": "/playwright-logger-pro/",
+  "scope": "/playwright-logger-pro/",
+  "display": "standalone",
+  "theme_color": "#15803d",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -1,0 +1,91 @@
+---
+title: Troubleshooting
+description: Fixes for missing colours, missing logs, duplicate lines, TypeScript errors, curl that does not replay, and more.
+---
+
+# Troubleshooting
+
+## No colours, or colours where you do not want them {#colours}
+
+With `colors` unset, the default follows the environment: off for `NO_COLOR` or `FORCE_COLOR=0`, on for any other `FORCE_COLOR`/`DEBUG_COLORS` or `PLAYWRIGHT_FORCE_TTY`, on for a TTY. `playwright test` sets `FORCE_COLOR` for its workers, so colours are normally on.
+
+:::note Playwright 1.64 with piped output
+`colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), the reporter strips every ANSI code from the test stdout it forwards, so the console shows no colours even with `colors: true`. The sink files keep them: lines sent to a `sink` (a file, an attachment) arrive with the colours intact. Run in a terminal, or use a `sink`.
+:::
+
+- **No colours in CI**: your runner may not set `FORCE_COLOR` for workers, or `NO_COLOR` is set. Force them: `apiLog: { colors: true }` and `browserLog: { colors: true }`. `colors: true` wins over `NO_COLOR`.
+- **Escape codes like `[32m` in a log viewer**: the viewer does not render ANSI. Set `NO_COLOR=1` or `colors: false` (Jenkins: enable the AnsiColor plugin instead).
+- **Colours in a file**: output sent through your own `sink` follows `colors`. Set `colors: false` for files. Browser-log attachments and files are always plain.
+
+## No logs at all {#no-logs-at-all}
+
+- You imported `test` from `@playwright/test`. Import from `playwright-logger-pro/fixtures`. A spec that uses the plain `test` is not instrumented.
+- `apiLog: { enabled: false }` or `browserLog: { enabled: false }` is set in config or in `test.use()`.
+- You merged fixtures through a plain `test` (`mergeTests` from `@playwright/test` with only your own tests). Import `mergeTests` from `playwright-logger-pro/fixtures` and merge our `test` in.
+- **Browser log**: nothing is printed for a passing test by design. Set `print: true` to see it live. API-only tests (no browser activity) produce no browser-log output.
+- You use `request.newContext()` or `playwright.request` directly: those are not the `request` fixture. Wrap them with `wrapRequestContext()`.
+- Pages created outside a fixture (`beforeAll`, scripts) need `attachBrowserLogger(page)`.
+
+## Duplicate lines
+
+- Wrapping a context twice (`wrapRequestContext` on the `request` fixture of our `test`) logs each request twice. Use one or the other.
+- With `print: true` and `includeApiLog: true`, apiLog lines are printed once (live), and copied into the attachment and file only.
+
+## TS2307 on the `/fixtures` import {#ts2307-on-the-fixtures-import}
+
+`Cannot find module 'playwright-logger-pro/fixtures'`:
+
+- Make sure you are on a version with `typesVersions`/`exports` types (0.1.0 or later of `playwright-logger-pro`).
+- `moduleResolution` can be `node`/`node10`, `node16`/`nodenext` or `bundler`. If you use `classic` or an older TypeScript, upgrade.
+- Delete `node_modules/.cache` or restart the TypeScript server after switching packages.
+
+## The curl does not replay
+
+- **Windows shells**: curl output is for POSIX shells (bash, zsh, sh, Git Bash, WSL). In PowerShell, quoting differs and `\` line continuation does not work.
+- **`***` in the command**: those values were redacted. Put the real value back.
+- **Multipart files**: file parts are read from disk (`-F 'name=@file'`). Put the file next to where you run curl, as the comment in the curl says.
+- **Binary body**: save the bytes as `request-body.bin` first.
+- **Cookies**: cookies set by the response itself are not included; only those in the cookie jar before the request.
+- **Redirects**: Playwright's redirect rules differ from `curl -L`. A redirected non-GET request is replayed one curl per step, and whether `Cookie` and a cross-origin `Authorization` are forwarded depends on your Playwright version (1.30 – 1.59 forward `Authorization`, 1.60+ drops it). See [API logging](./api-logging.mdx#redirects).
+- **Truncated**: the command starts with `# request body truncated`. Raise `maxBodyLength`.
+- **Not in the curl**: `httpCredentials`, proxy, client certificates, `ignoreHTTPSErrors`.
+
+## Step locations point into `node_modules` {#step-locations-point-into-node_modules}
+
+The library hides its own frames from Playwright's stack attribution. If it cannot (an unusual Playwright layout), it falls back to scrubbing stacks and step locations may point into the library. Run with `DEBUG=plp` to print a warning when that fallback is used, and open an issue with your Playwright version.
+
+## There is no browser log for my `beforeAll` page
+
+Pages created in `beforeAll` belong to no test. Call `attachBrowserLogger(page)`; its events go to whichever test is running.
+
+## A secret shows up in the browser log
+
+The target did not look sensitive. See [Redaction & security](./redaction-security.mdx#more-control): use `getByLabel('Password')`-style locators, `redact.values`, `redact.selectors`, `inspectInputType` or `fillValues: 'always'`.
+
+If the value was transformed on its way to the log (base64, double-encoded, HTML-escaped, split over several `console.log` arguments, or a `Set-Cookie` value set by the server), the logger does not recognise it: list the value in `redact.values` or switch the echoing channel off. See the [known limits](./redaction-security.mdx#known-limits).
+
+Also check these cases:
+
+- Turning off `browserConsole` and `network` does not cover **action lines** (a base64 value passed to `page.evaluate`), **page errors**, **dialog text** or **navigation URLs**. Add the encoded form to `redact.values`, or use `actions: false`, `pageErrors: false` or `navigation: false` (`navigation` covers dialogs and navigation URLs).
+- A value that mixes escaped and literal forms, or mixes upper- and lower-case hex within one value (`%2f` next to `%2F`), is not matched. Lower and upper case are matched per value.
+- A card, expiry or PAN field is missed: see [Sensitive field detection](./redaction-security.mdx#field-detection).
+
+## Huge logs and slow runs
+
+- Reduce bodies: `maxBodyLength`, `logBody: false`, `logHeaders: false`.
+- Reduce the browser log: `browserConsole: 'error'`, `network: false`, `maxEvents`, `maxArgLength`.
+- `location: true` costs one stack capture per action; leave it off for large suites.
+- `network` and `redact.inspectInputType` add protocol traffic; they are off by default.
+
+## ESM/CJS loading errors
+
+- `ERR_REQUIRE_ESM` or "Cannot use import statement": use the right syntax for your project's `"type"`. Both `require('playwright-logger-pro/fixtures')` and `import ... from 'playwright-logger-pro/fixtures'` are supported.
+- Importing from a path inside `dist/` is not supported; use the two entry points.
+
+## pnpm strict peer dependencies
+
+`@playwright/test` is a peer dependency. With pnpm, install it in the same package as `playwright-logger-pro`, and keep one copy of it in the workspace. See [Installation](./installation.mdx#monorepos-and-pnpm).
+
+## A warning mentions an option
+
+`[playwright-logger-pro] option "x" must be …; using …` means the option has an invalid type or value (or is unknown) and the default was used. Fix the option; nothing else is affected.

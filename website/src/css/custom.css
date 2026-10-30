@@ -1,0 +1,326 @@
+/*
+ * Playwright Logger Pro docs: original green branding.
+ * Light primary #15803d (5.0:1 on white), dark primary #4ade80 (9.9:1 on #1b1b1d).
+ * System font stack only: no web fonts, works offline.
+ */
+:root {
+  --ifm-color-primary: #15803d;
+  --ifm-color-primary-dark: #137337;
+  --ifm-color-primary-darker: #116631;
+  --ifm-color-primary-darkest: #0d4d25;
+  --ifm-color-primary-light: #38935a;
+  --ifm-color-primary-lighter: #5ba677;
+  --ifm-color-primary-lightest: #96c6a8;
+  --ifm-color-primary-contrast-background: #ecfdf3;
+  --ifm-color-primary-contrast-foreground: #0d4d25;
+  --ifm-link-color: var(--ifm-color-primary);
+  --ifm-link-hover-color: var(--ifm-color-primary-darker);
+
+  --ifm-font-family-base: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+  --ifm-font-family-monospace: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --ifm-font-color-secondary: #4b5563;
+  --ifm-code-font-size: 92%;
+  --ifm-navbar-height: 3.75rem;
+  --ifm-toc-border-color: #d9dee5;
+
+  /* Highlighted code lines: tint kept light so every token stays >= 4.5:1 on it. scripts/check-prism-contrast.mjs
+     reads both values below; edit them here only. */
+  --docusaurus-highlighted-code-line-bg: rgb(21 128 61 / 0.08);
+  --plp-surface: #f8fafc;
+  --plp-focus: #15803d;
+
+  /* Terminal samples (ANSI SGR). All pairs are >= 4.5:1 on --ansi-bg. */
+  --ansi-bg: #f8fafc;
+  --ansi-border: #d9dee5;
+  --ansi-fg: #1e293b;
+  --ansi-dim: #586577;
+  --ansi-red: #b91c1c;
+  --ansi-green: #15803d;
+  --ansi-yellow: #8a4b00;
+  --ansi-blue: #1d4ed8;
+  --ansi-magenta: #a21caf;
+  --ansi-cyan: #0e7490;
+  --ansi-gray: #475569;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #4ade80;
+  --ifm-color-primary-dark: #43c873;
+  --ifm-color-primary-darker: #3bb266;
+  --ifm-color-primary-darkest: #2c854d;
+  --ifm-color-primary-light: #65e393;
+  --ifm-color-primary-lighter: #80e8a6;
+  --ifm-color-primary-lightest: #aef0c6;
+  --ifm-color-primary-contrast-background: #12301f;
+  --ifm-color-primary-contrast-foreground: #aef0c6;
+  --ifm-font-color-secondary: #a8b0bb;
+  --ifm-toc-border-color: #35383d;
+  --ifm-link-hover-color: var(--ifm-color-primary-lighter);
+
+  --docusaurus-highlighted-code-line-bg: rgb(74 222 128 / 0.08);
+  --plp-surface: #232427;
+  --plp-focus: #4ade80;
+
+  --ansi-bg: #0b1220;
+  --ansi-border: #26324a;
+  --ansi-fg: #e2e8f0;
+  --ansi-dim: #8b9bb0;
+  --ansi-red: #f87171;
+  --ansi-green: #4ade80;
+  --ansi-yellow: #facc15;
+  --ansi-blue: #60a5fa;
+  --ansi-magenta: #e879f9;
+  --ansi-cyan: #22d3ee;
+  --ansi-gray: #94a3b8;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focus rings: green, >= 3:1 against the adjacent colours in both themes. */
+:focus-visible {
+  outline: 2px solid var(--plp-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Navbar ---- */
+.navbar {
+  box-shadow: none;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.navbar__logo img {
+  border-radius: 6px;
+}
+
+.navbar__item.navbar__link {
+  font-weight: 500;
+}
+
+/* Right side order: search, GitHub, npm, colour toggle. */
+.navbar__items--right > [class*='navbarSearchContainer'] {
+  order: -1;
+  margin-right: 0.25rem;
+}
+
+.header-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 !important;
+  border-radius: 0.5rem;
+}
+
+.header-icon-link:hover {
+  background: var(--ifm-color-emphasis-200);
+}
+
+.header-icon-link::before {
+  content: '';
+  width: 1.4rem;
+  height: 1.4rem;
+  background-color: var(--ifm-navbar-link-color);
+  -webkit-mask: var(--plp-icon) center / contain no-repeat;
+  mask: var(--plp-icon) center / contain no-repeat;
+}
+
+.header-icon-link svg {
+  display: none;
+}
+
+.header-github-link {
+  --plp-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E");
+}
+
+.header-npm-link {
+  --plp-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z'/%3E%3C/svg%3E");
+}
+
+@media (max-width: 996px) {
+  /* The drawer has no room for icon-only links: show their text. */
+  .navbar-sidebar .header-icon-link {
+    width: auto;
+    height: auto;
+    justify-content: flex-start;
+  }
+  .navbar-sidebar .header-icon-link::before {
+    display: none;
+  }
+  .navbar-sidebar .header-icon-link::after {
+    content: attr(aria-label);
+    padding: var(--ifm-menu-link-padding-vertical) var(--ifm-menu-link-padding-horizontal);
+  }
+}
+
+/* ---- Announcement bar (preview) ----
+   The theme sets inline colours from themeConfig, so override them here to follow the colour mode. */
+.theme-announcement-bar {
+  background-color: var(--ifm-color-primary-contrast-background) !important;
+  color: var(--ifm-color-primary-contrast-foreground) !important;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+
+.theme-announcement-bar [class*='content'] {
+  font-size: 0.9rem;
+}
+
+.theme-announcement-bar button {
+  color: inherit;
+}
+
+/* ---- Docs ---- */
+.theme-doc-markdown h1 {
+  letter-spacing: -0.02em;
+}
+
+.theme-doc-sidebar-container .menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+}
+
+.table-of-contents__link--active {
+  font-weight: 600;
+}
+
+/* Wide tables scroll inside their own region instead of the page. */
+.plp-table-scroll {
+  overflow-x: auto;
+  margin-bottom: var(--ifm-spacing-vertical);
+}
+
+.plp-table-scroll table {
+  margin-bottom: 0;
+  display: table;
+  min-width: 40rem;
+}
+
+.markdown table code {
+  word-break: normal;
+}
+
+.markdown td:first-child code {
+  white-space: nowrap;
+}
+
+/* ---- Admonitions: restyled with the brand scale; icon + title always present ---- */
+.alert {
+  border: 1px solid var(--ifm-alert-border-color);
+  border-left-width: 5px;
+  box-shadow: none;
+  border-radius: 0.5rem;
+}
+
+.alert--warning {
+  --ifm-alert-background-color: #fff8e6;
+  --ifm-alert-foreground-color: #5c3b00;
+  --ifm-alert-border-color: #b7791f;
+}
+
+.alert--danger {
+  --ifm-alert-background-color: #fff1f1;
+  --ifm-alert-foreground-color: #6b1212;
+  --ifm-alert-border-color: #b91c1c;
+}
+
+.alert--info {
+  --ifm-alert-background-color: #eef6ff;
+  --ifm-alert-foreground-color: #123a6b;
+  --ifm-alert-border-color: #1d4ed8;
+}
+
+.alert--success {
+  --ifm-alert-background-color: var(--ifm-color-primary-contrast-background);
+  --ifm-alert-foreground-color: var(--ifm-color-primary-contrast-foreground);
+  --ifm-alert-border-color: var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .alert--warning {
+  --ifm-alert-background-color: #33260a;
+  --ifm-alert-foreground-color: #fde9b4;
+  --ifm-alert-border-color: #facc15;
+}
+
+[data-theme='dark'] .alert--danger {
+  --ifm-alert-background-color: #3a1517;
+  --ifm-alert-foreground-color: #fecaca;
+  --ifm-alert-border-color: #f87171;
+}
+
+[data-theme='dark'] .alert--info {
+  --ifm-alert-background-color: #0f2540;
+  --ifm-alert-foreground-color: #cfe3ff;
+  --ifm-alert-border-color: #60a5fa;
+}
+
+.alert code {
+  background: rgb(127 127 127 / 0.15);
+  border-color: transparent;
+}
+
+/* ---- Code blocks ---- */
+/* The stock Prism comment colours are below 4.5:1; use AA-safe ones. */
+[data-theme='light'] .token.comment,
+[data-theme='light'] .token.prolog,
+[data-theme='light'] .token.doctype,
+[data-theme='light'] .token.cdata {
+  color: #5c6773 !important;
+}
+
+[data-theme='dark'] .token.comment,
+[data-theme='dark'] .token.prolog {
+  color: #7fb069 !important;
+}
+
+@media (max-width: 576px) {
+  :root {
+    --ifm-code-font-size: 85%;
+  }
+}
+
+/* ---- Tabs scroll horizontally on small screens ---- */
+.tabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+/* ---- Footer ---- */
+.footer {
+  --ifm-footer-background-color: #0f172a;
+}
+
+.footer__copyright {
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.footer__link-item,
+.footer__copyright {
+  color: #cbd5e1;
+}
+
+.footer__title {
+  color: #fff;
+}
+
+/* ---- Rendered changelog page ---- */
+.plp-changelog h2 {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--ifm-toc-border-color);
+}
