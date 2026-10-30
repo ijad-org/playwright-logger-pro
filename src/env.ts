@@ -22,7 +22,18 @@ export function inCI(env: Env = process.env): boolean {
   return CI_VARIABLES.some((name) => isOn(env[name]));
 }
 
-interface MaybeTTY { isTTY?: boolean }
+interface MaybeTTY { isTTY?: boolean; getColorDepth?: unknown; hasColors?: unknown }
+
+/**
+ * Whether the stream is a terminal. Playwright 1.30–1.39 make every worker's stdout look like
+ * one although it is a pipe (process.js setTtyParams): it assigns `isTTY = true` plus its own
+ * `getColorDepth` and `hasColors` to the stream. On a real tty.WriteStream those two live on
+ * the prototype, and a pipe has neither, so own properties give the fake away.
+ */
+function isRealTTY(stream: MaybeTTY | undefined): boolean {
+  if (!stream?.isTTY) return false;
+  return !(Object.hasOwn(stream, 'getColorDepth') || Object.hasOwn(stream, 'hasColors'));
+}
 
 /**
  * Whether the printed curl command is coloured under `curlFormat.colors: 'auto'`
@@ -31,7 +42,8 @@ interface MaybeTTY { isTTY?: boolean }
  *
  * - NO_COLOR (non-empty) always wins;
  * - never in CI, and never on TERM=dumb;
- * - only when the output really reaches a terminal: stdout is a TTY, or
+ * - only when the output really reaches a terminal: stdout is a TTY (not the fake that
+ *   Playwright 1.30–1.39 puts on its piped workers), or
  *   PLAYWRIGHT_FORCE_TTY (anything but empty, 0, false) says the runner's terminal is one.
  *
  * FORCE_COLOR does not count: `playwright test` sets it for its workers, whose stdout is
@@ -43,5 +55,5 @@ export function autoCurlColors(
     stdout: MaybeTTY | undefined = process.stdout,
 ): boolean {
   if (env.NO_COLOR || inCI(env) || env.TERM === 'dumb') return false;
-  return Boolean(stdout?.isTTY) || isOn(env.PLAYWRIGHT_FORCE_TTY);
+  return isRealTTY(stdout) || isOn(env.PLAYWRIGHT_FORCE_TTY);
 }
