@@ -1,5 +1,6 @@
 import type { RedirectHop, RequestInfo } from './types';
 import { palette, redactHeaders, splitChars } from './format';
+import type { CurlColorDepth } from './curlPalette';
 import type { Colorizer, Palette } from './format';
 import { multipartParts } from './multipart';
 import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
@@ -17,6 +18,11 @@ export interface CurlOptions {
    * gives exactly the uncoloured command, which stays safe to paste.
    */
   colors?: boolean;
+  /**
+   * Colours the terminal shows: 8 for the 256-colour palette, 4 for the 16 basic colours. Only
+   * used with `colors` (default: detected from COLORTERM, TERM and the terminal).
+   */
+  colorDepth?: CurlColorDepth;
   /**
    * One option per line, joined with ` \` continuations (default true). With
    * false the command is a single line; notes stay on their own `#` lines.
@@ -191,7 +197,7 @@ function buildRedirectSteps(
     redact: readonly string[],
     options: CurlOptions,
 ): string {
-  const p = palette(Boolean(options.colors));
+  const p = palette(Boolean(options.colors), options.colorDepth);
   const comment = (text: string): string => render([tok(text, COMMENT)], p);
   const out = [
     comment(`# the request was redirected ${hops.length - 1} time(s). Playwright's redirect rules ` +
@@ -245,9 +251,9 @@ export function buildCurl(
     options: CurlOptions = {},
 ): string {
   const {
-    redactQueryParams = [], redactBodyKeys = [], maxBodyLength, colors = false, multiline = true,
+    redactQueryParams = [], redactBodyKeys = [], maxBodyLength, colors = false, colorDepth, multiline = true,
   } = options;
-  const p = palette(colors);
+  const p = palette(colors, colorDepth);
   if (!isValidUrl(info.url)) return render([tok('# could not build curl: invalid URL', COMMENT)], p);
   const method = info.method.toUpperCase();
   const parts = multipartParts(info.multipart, redactBodyKeys);

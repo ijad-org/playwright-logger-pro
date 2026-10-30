@@ -326,7 +326,22 @@ use: { apiLog: { curl: true, curlFormat: { colors: 'auto', multiline: true, file
 | `multiline` | `true` | `false` prints the command on one line, options joined by single spaces. Comments (`# …` notes, redirect steps) stay on their own lines above the command. |
 | `file` | `true` | With the `test` fixture, collect the test's curls into a `curl.sh` file, attach it to the report and print a one-line notice. Only applies while `curl` is on. |
 
-**Colours.** `curl` is bold; the method is blue (GET), green (POST), magenta (PUT, PATCH) or red (DELETE); the URL is blue with magenta query parameter names; header names are magenta; a masked `***` is bold and reversed; a JSON body (only when it is valid JSON) gets blue keys and green strings; `#` comment lines are grey. Flags (`-X`, `-H`, `--data-raw`, …), the `\` continuations, quotes and punctuation keep your terminal's default colour. The palette avoids white, yellow, cyan and dim text, so it reads on the default light and dark xterm themes. Colours only decorate the text: removing the ANSI codes always gives exactly the plain command, so quoting stays safe. With colours off the output is byte-for-byte the plain command.
+**Colours.** `curl` is bold; the method, URL, parameter and header names, JSON keys and strings and `#` comments each have their own colour (table below); a masked `***` is bold and reversed. A JSON body gets coloured keys and strings only when it is valid JSON. Flags (`-X`, `-H`, `--data-raw`, …), the `\` continuations, quotes and punctuation keep your terminal's default colour. Colours only decorate the text: removing the ANSI codes always gives exactly the plain command, so quoting stays safe. With colours off the output is byte-for-byte the plain command.
+
+The colours are picked to read on both a black and a white terminal background: every one has a WCAG contrast of at least 4.5:1 on both in the 256-colour palette, and at least 3:1 in the 16-colour one. They are xterm's default palette indexes, so a theme that redefines the first 16 colours changes the 16-colour variant (the 256-colour cube and greys are fixed). The 256-colour codes (`38;5;N`) are used when `COLORTERM` is `truecolor`/`24bit`, `TERM` contains `256color` or the terminal reports at least 8 bits of colour; otherwise the 16 basic colours. The 16-colour palette has no green that reaches 3:1 on white, so POST and strings are not green there. Contrast of each element (black / white background):
+
+| Element | 256 colours (index, colour) | black / white | 16 colours (index, colour) | black / white |
+| --- | --- | --- | --- | --- |
+| URL, JSON key, `-X GET` | 63 `#5f5fff` | 4.57 / 4.60 | 12 `#5c5cff` | 4.43 / 4.74 |
+| Query parameter and header names | 163 `#d700af` | 4.51 / 4.66 | 5 `#cd00cd` | 4.48 / 4.69 |
+| JSON string, `-X POST` | 29 `#00875f` | 4.63 / 4.53 | 9 `#ff0000` (POST: 5 `#cd00cd`) | 5.25 / 4.00 (POST: 4.48 / 4.69) |
+| `-X PUT`, `-X PATCH` | 98 `#875fd7` | 4.65 / 4.52 | 13 `#ff00ff` | 6.70 / 3.14 |
+| `-X DELETE` | 131 `#af5f5f` | 4.62 / 4.54 | 1 `#cd0000` | 3.60 / 5.84 |
+| `#` comments | 243 `#767676` | 4.62 / 4.54 | 8 `#7f7f7f` | 5.24 / 4.00 |
+| `curl`, other methods | bold, default foreground | | bold, default foreground | |
+| Masked `***` | bold + inverse | | bold + inverse | |
+
+`npm run contrast` prints these ratios from the palette in `src/curlPalette.ts`, and a unit test fails when one drops below the limits above.
 
 ### When the curl is coloured
 
@@ -334,15 +349,26 @@ With `curlFormat.colors: 'auto'` (the default) the curl is coloured only when **
 
 1. `NO_COLOR` is not set to a non-empty value. It always wins under `'auto'`, even over a top-level `colors: true`.
 2. The process is not on CI: none of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TRAVIS`, `APPVEYOR`, `TF_BUILD`, `TEAMCITY_VERSION`, `JENKINS_URL`, `BITBUCKET_BUILD_NUMBER`, `CODEBUILD_BUILD_ID`, `DRONE` is set to a value other than `0` or `false`.
-3. The output really reaches a terminal: `process.stdout` is a TTY, or `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`), and `TERM` is not `dumb`.
+3. The output really reaches a terminal: `process.stdout` is a TTY, or the test runner's own stdout is one (see [Local runs](#local-runs-in-a-terminal-need-no-setting)), or `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`); and `TERM` is not `dumb`.
 4. The resolved [`colors`](#colors) is true and the sink is the default console sink (a custom `sink` keeps the curl plain).
 
-`FORCE_COLOR` does not count. `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe, and Playwright gives a worker no other signal about the terminal of the runner. So **in a Playwright worker the curl stays plain unless you opt in**: run with `PLAYWRIGHT_FORCE_TTY=1` (you assert that the runner's terminal is a TTY), or set `curlFormat.colors: true`. A top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines.
+`FORCE_COLOR` does not count: `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe. A top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines.
+
+#### Local runs in a terminal need no setting
+
+A worker cannot see the runner's terminal, but the runner can. When a spec file imports `playwright-logger-pro` (or `/fixtures`), that import runs in the runner process, which checks whether its own stdout is a real terminal (`isatty(1)`). If it is, and the runner is not on CI, `NO_COLOR` is unset, `FORCE_COLOR`/`DEBUG_COLORS` are not `0`/`false` and `TERM` is not `dumb`, it sets `PLP_RUNNER_TTY=<runner pid>:<colour depth>` in its environment, which every worker inherits. A worker that finds its parent's pid in the variable counts the output as a terminal, and still applies every other check above (CI, `NO_COLOR`, `TERM=dumb`, the resolved `colors`, the sink). So a plain `npx playwright test` in a terminal prints a coloured curl, and `playwright test | cat`, CI and `NO_COLOR=1 npx playwright test` print a plain one.
+
+Limits:
+
+- The variable is tied to the runner's pid, so it is ignored in any process that is not a direct child of the runner. A copy inherited by a nested `playwright test` started from a test, or one you set yourself (`PLP_RUNNER_TTY=1`), does nothing. To force colours, use `PLAYWRIGHT_FORCE_TTY=1` or `curlFormat.colors: true`.
+- The package must be imported while the runner loads the spec files (an `import` at the top of a spec or of a fixture file they import). A `require()` made only inside a test body runs in the worker, too late. This holds on Playwright 1.30, 1.39, 1.48 and the latest, where the runner process loads the spec files.
+- Only a runner whose stdout is a terminal counts. Output that goes through a pipe (`| tee`, an IDE test panel, a CI step) stays plain; use `curlFormat.colors: true` if that output renders colours.
 
 `curlFormat.colors: true` is an **explicit override**: the curl is coloured whatever `NO_COLOR`, CI, the terminal, the top-level `colors` and the sink say. Use it when you know where the output goes; ANSI codes will end up in CI logs, files or a custom sink. `curlFormat.colors: false` never colours. The `curl.sh` file and its attachment are never coloured.
 
 ```sh
-PLAYWRIGHT_FORCE_TTY=1 npx playwright test   # coloured curl from the workers, on your own terminal
+npx playwright test                          # in a terminal: coloured curl
+PLAYWRIGHT_FORCE_TTY=1 npx playwright test | tee run.log   # you assert the output is a terminal
 ```
 
 ### curl.sh

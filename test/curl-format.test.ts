@@ -14,8 +14,9 @@ import { createColors } from 'picocolors';
 import { request } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
 import { buildCurl } from '../src/curl';
+import { CURL_COLORS } from '../src/curlPalette';
 import { CURL_SCRIPT_NOTICE, renderCurlScript, specLocation, stripControl, writeCurlScript } from '../src/curlFile';
-import { autoCurlColors, inCI } from '../src/env';
+import { RUNNER_TTY_VAR, autoCurlColors, curlColorDepth, inCI, markRunnerTty } from '../src/env';
 import type { TestInfoLike } from '../src/browser/output';
 import { resolveConfig } from '../src/types';
 import { resetWarnings } from '../src/warn';
@@ -32,7 +33,7 @@ const GOLDEN: Record<string, string> = JSON.parse(
     fs.readFileSync(path.join(__dirname, 'fixtures', 'curl-golden.json'), 'utf8'),
 );
 
-const build = (c: CurlCase, extra: { colors?: boolean; multiline?: boolean } = {}): string =>
+const build = (c: CurlCase, extra: { colors?: boolean; multiline?: boolean; colorDepth?: 4 | 8 } = {}): string =>
   buildCurl(c.info, c.redact ?? [], { ...c.options, ...extra });
 
 /** Run `fn` with `env` applied; a promise is awaited before the environment is restored. */
@@ -84,6 +85,7 @@ function withTty<T>(isTTY: boolean | undefined, fn: () => T): T {
 /** Environment of a plain interactive terminal: nothing that changes the colours is set. */
 const CLEAN_ENV: Record<string, string | undefined> = {
   NO_COLOR: undefined, FORCE_COLOR: undefined, DEBUG_COLORS: undefined, PLAYWRIGHT_FORCE_TTY: undefined,
+  PLP_RUNNER_TTY: undefined, COLORTERM: undefined,
   TERM: 'xterm-256color', CI: undefined, GITHUB_ACTIONS: undefined, GITLAB_CI: undefined, BUILDKITE: undefined,
   CIRCLECI: undefined, TRAVIS: undefined, APPVEYOR: undefined, TF_BUILD: undefined, TEAMCITY_VERSION: undefined,
   JENKINS_URL: undefined, BITBUCKET_BUILD_NUMBER: undefined, CODEBUILD_BUILD_ID: undefined, DRONE: undefined,
@@ -141,93 +143,131 @@ describe('stripping the colours gives the plain command', () => {
   });
 });
 
-describe('colour mapping', () => {
-  const colored = (info: Parameters<typeof buildCurl>[0], redact: string[] = [], options = {}) =>
-    buildCurl(info, redact, { ...options, colors: true });
-  const mask = pc.bold(pc.inverse('***'));
+/** A foreground colouring function as the curl command writes it: palette index `c256` or, with 16 colours, `c16`. */
+const fg = (depth: 4 | 8, c256: number, c16: number) => (s: string): string =>
+  `\u001b[${depth === 8 ? `38;5;${c256}` : c16 < 8 ? 30 + c16 : 90 + c16 - 8}m${s}\u001b[39m`;
 
-  test('curl is bold; flags, quotes and continuations keep the default colour', () => {
-    const out = colored({ method: 'post', url: 'https://a.test/x', data: 'raw' });
-    assert.ok(out.startsWith(`${pc.bold('curl')} -X `), out);
-    assert.ok(out.includes(`'${pc.blue('https://a.test/x')}' \\\n  `), out);
-    assert.ok(out.includes("--data-raw 'raw'"), out);
-  });
+for (const depth of [8, 4] as const) {
+  describe(`colour mapping, ${depth === 8 ? '256 colours' : '16 colours'}`, () => {
+    const colored = (info: Parameters<typeof buildCurl>[0], redact: string[] = [], options = {}) =>
+      buildCurl(info, redact, { ...options, colors: true, colorDepth: depth });
+    // The palette as (256-colour index, 16-colour index) pairs; see src/curlPalette.ts.
+    const blue = fg(depth, 63, 12);
+    const green = fg(depth, 29, 5);
+    const purple = fg(depth, 98, 13);
+    const red = fg(depth, 131, 1);
+    const magenta = fg(depth, 163, 5);
+    const string = fg(depth, 29, 9);
+    const grey = fg(depth, 243, 8);
+    const mask = pc.bold(pc.inverse('***'));
 
-  test('the method colours are readable on light and dark backgrounds', () => {
-    const expected: Record<string, (s: string) => string> = {
-      post: pc.green, put: pc.magenta, patch: pc.magenta, delete: pc.red, options: pc.bold,
-    };
-    for (const [method, paint] of Object.entries(expected)) {
-      const out = colored({ method, url: 'https://a.test/x' });
-      assert.ok(out.includes(`-X ${paint(method.toUpperCase())} `), `${method}: ${out}`);
-    }
-    // GET is implied; with a body it is spelled out in blue.
-    const get = colored({ method: 'get', url: 'https://a.test/x', data: { a: 1 } });
-    assert.ok(get.includes(`-X ${pc.blue('GET')} `), get);
-  });
+    test('curl is bold; flags, quotes and continuations keep the default colour', () => {
+      const out = colored({ method: 'post', url: 'https://a.test/x', data: 'raw' });
+      assert.ok(out.startsWith(`${pc.bold('curl')} -X `), out);
+      assert.ok(out.includes(`'${blue('https://a.test/x')}' \\\n  `), out);
+      assert.ok(out.includes("--data-raw 'raw'"), out);
+    });
 
-  test('-L and --head are flags', () => {
-    assert.ok(colored({ method: 'head', url: 'https://a.test/x' }).includes(' --head'));
-    assert.ok(colored({ method: 'get', url: 'https://a.test/x', followRedirects: true }).includes(' -L '));
-  });
-
-  test('URL blue, parameter names magenta, ? & = plain, masked value bold + inverse', () => {
-    const out = colored({ method: 'get', url: 'https://a.test/p?a=1&token=zzz' }, [], { redactQueryParams: ['token'] });
-    assert.ok(out.includes(
-        `${pc.blue('https://a.test/p')}?${pc.magenta('a')}=1&${pc.magenta('token')}=${mask}`,
-    ), out);
-  });
-
-  test('header names magenta, colon and value plain, masked value bold + inverse', () => {
-    const out = colored({ method: 'get', url: 'https://a.test/', headers: { Accept: 'text/plain', Authorization: 'x' } }, ['authorization']);
-    assert.ok(out.includes(`-H '${pc.magenta('Accept')}: text/plain'`), out);
-    assert.ok(out.includes(`${pc.magenta('Authorization')}: ${mask}'`), out);
-  });
-
-  test('JSON body: keys blue, strings green, punctuation and the rest plain', () => {
-    const out = colored({ method: 'post', url: 'https://a.test/', data: '{"k": ["v", 12, true, null], "m": "***"}' });
-    const expected = [
-      '{', pc.blue('"k"'), ': [', pc.green('"v"'), ', 12, true, null]', ', ', pc.blue('"m"'), ': ',
-      pc.green('"'), mask, pc.green('"'), '}',
-    ].join('');
-    assert.ok(out.includes(`'${expected}'`), out);
-  });
-
-  test('a body that is not valid JSON stays uncoloured', () => {
-    for (const body of ['a=1&b=2', '{"a": 1', "{'a': 1}", 'plain text']) {
-      const out = colored({ method: 'post', url: 'https://a.test/', data: body });
-      assert.ok(out.includes(`'${body.replace(/'/g, `'\\''`)}'`), `${body}: ${out}`);
-    }
-    // truncation cuts JSON in the middle
-    const cut = colored({ method: 'post', url: 'https://a.test/', data: { text: 'abcdefghijkl' } }, [], { maxBodyLength: 9 });
-    assert.ok(!cut.includes(pc.blue('"text"')), cut);
-  });
-
-  test('# lines are grey, one by one', () => {
-    const out = colored({ method: 'put', url: 'https://a.test/', data: Buffer.from([1]), followRedirects: true });
-    const notes = out.split('\n').filter((line) => stripAnsi(line).startsWith('#'));
-    assert.equal(notes.length, 2);
-    for (const line of notes) assert.equal(line, pc.gray(stripAnsi(line)));
-    assert.equal(buildCurl({ method: 'get', url: 'nope' }, [], { colors: true }), pc.gray('# could not build curl: invalid URL'));
-  });
-
-  test('the form, multipart and binary options use the same colours', () => {
-    const form = colored({ method: 'post', url: 'https://a.test/', form: { user: 'jo' } });
-    assert.ok(form.includes(`--data-urlencode '${pc.magenta('user')}=jo'`), form);
-    const multi = colored({ method: 'post', url: 'https://a.test/', multipart: { f: 'v' } });
-    assert.ok(multi.includes(`--form-string '${pc.magenta('f')}=v'`), multi);
-  });
-
-  test('no dim, white, yellow or cyan text anywhere: they vanish on a light or a dark xterm', () => {
-    for (const c of CURL_CASES) {
-      const out = build(c, { colors: true });
-      // grey (90) is for # notes only
-      for (const line of out.split('\n')) {
-        const note = stripAnsi(line).startsWith('#');
-        assert.ok(!/\u001b\[(?:2|33|36|37|93|96|97)m/.test(line), `${c.name}: ${line}`);
-        if (!note) assert.ok(!/\u001b\[90m/.test(line), `${c.name}: ${line}`);
+    test('every method has its own colour; other methods are bold', () => {
+      const expected: Record<string, (s: string) => string> = {
+        post: green, put: purple, patch: purple, delete: red, options: pc.bold,
+      };
+      for (const [method, paint] of Object.entries(expected)) {
+        const out = colored({ method, url: 'https://a.test/x' });
+        assert.ok(out.includes(`-X ${paint(method.toUpperCase())} `), `${method}: ${out}`);
       }
-    }
+      // GET is implied; with a body it is spelled out in blue.
+      const get = colored({ method: 'get', url: 'https://a.test/x', data: { a: 1 } });
+      assert.ok(get.includes(`-X ${blue('GET')} `), get);
+    });
+
+    test('-L and --head are flags', () => {
+      assert.ok(colored({ method: 'head', url: 'https://a.test/x' }).includes(' --head'));
+      assert.ok(colored({ method: 'get', url: 'https://a.test/x', followRedirects: true }).includes(' -L '));
+    });
+
+    test('URL blue, parameter names magenta, ? & = plain, masked value bold + inverse', () => {
+      const out = colored({ method: 'get', url: 'https://a.test/p?a=1&token=zzz' }, [], { redactQueryParams: ['token'] });
+      assert.ok(out.includes(
+          `${blue('https://a.test/p')}?${magenta('a')}=1&${magenta('token')}=${mask}`,
+      ), out);
+    });
+
+    test('header names magenta, colon and value plain, masked value bold + inverse', () => {
+      const out = colored({ method: 'get', url: 'https://a.test/', headers: { Accept: 'text/plain', Authorization: 'x' } }, ['authorization']);
+      assert.ok(out.includes(`-H '${magenta('Accept')}: text/plain'`), out);
+      assert.ok(out.includes(`${magenta('Authorization')}: ${mask}'`), out);
+    });
+
+    test('JSON body: keys blue, strings green (16 colours: red), punctuation and the rest plain', () => {
+      const out = colored({ method: 'post', url: 'https://a.test/', data: '{"k": ["v", 12, true, null], "m": "***"}' });
+      const expected = [
+        '{', blue('"k"'), ': [', string('"v"'), ', 12, true, null]', ', ', blue('"m"'), ': ',
+        string('"'), mask, string('"'), '}',
+      ].join('');
+      assert.ok(out.includes(`'${expected}'`), out);
+    });
+
+    test('a body that is not valid JSON stays uncoloured', () => {
+      for (const body of ['a=1&b=2', '{"a": 1', "{'a': 1}", 'plain text']) {
+        const out = colored({ method: 'post', url: 'https://a.test/', data: body });
+        assert.ok(out.includes(`'${body.replace(/'/g, `'\\''`)}'`), `${body}: ${out}`);
+      }
+      // truncation cuts JSON in the middle
+      const cut = colored({ method: 'post', url: 'https://a.test/', data: { text: 'abcdefghijkl' } }, [], { maxBodyLength: 9 });
+      assert.ok(!cut.includes(blue('"text"')), cut);
+    });
+
+    test('# lines are grey, one by one', () => {
+      const out = colored({ method: 'put', url: 'https://a.test/', data: Buffer.from([1]), followRedirects: true });
+      const notes = out.split('\n').filter((line) => stripAnsi(line).startsWith('#'));
+      assert.equal(notes.length, 2);
+      for (const line of notes) assert.equal(line, grey(stripAnsi(line)));
+      assert.equal(
+          buildCurl({ method: 'get', url: 'nope' }, [], { colors: true, colorDepth: depth }),
+          grey('# could not build curl: invalid URL'),
+      );
+    });
+
+    test('the form, multipart and binary options use the same colours', () => {
+      const form = colored({ method: 'post', url: 'https://a.test/', form: { user: 'jo' } });
+      assert.ok(form.includes(`--data-urlencode '${magenta('user')}=jo'`), form);
+      const multi = colored({ method: 'post', url: 'https://a.test/', multipart: { f: 'v' } });
+      assert.ok(multi.includes(`--form-string '${magenta('f')}=v'`), multi);
+    });
+
+    test('only the palette colours are used: no dim, white, yellow, cyan or black text', () => {
+      const allowed = new Set(Object.values(CURL_COLORS).map((c) => (depth === 8 ? `38;5;${c.c256}` : String(c.c16 < 8 ? 30 + c.c16 : 90 + c.c16 - 8))));
+      // bold, inverse and their off codes (the mask), plus the foreground reset
+      const plainCodes = new Set(['1', '7', '22', '27', '39']);
+      for (const c of CURL_CASES) {
+        const out = build(c, { colors: true, colorDepth: depth });
+        for (const [, code] of out.matchAll(/\u001b\[([0-9;]*)m/g)) {
+          assert.ok(allowed.has(code) || plainCodes.has(code), `${c.name}: SGR ${code}`);
+        }
+      }
+    });
+
+    test('the colours off are the golden output, the colours stripped too', () => {
+      for (const c of CURL_CASES) {
+        assert.equal(build(c, { colors: false, colorDepth: depth }), GOLDEN[c.name], c.name);
+        assert.equal(stripAnsi(build(c, { colors: true, colorDepth: depth })), GOLDEN[c.name], c.name);
+      }
+    });
+  });
+}
+
+describe('the palette follows the terminal', () => {
+  const coloured = (env: Record<string, string | undefined>, tty = true): string =>
+    withEnv({ ...CLEAN_ENV, COLORTERM: undefined, ...env }, () => withTty(tty, () =>
+      buildCurl({ method: 'get', url: 'https://a.test/' }, [], { colors: true })));
+
+  test('256 colours from COLORTERM or TERM, else the 16 basic ones', () => {
+    assert.ok(coloured({ COLORTERM: 'truecolor', TERM: 'xterm' }).includes('\u001b[38;5;63m'));
+    assert.ok(coloured({ COLORTERM: '24bit', TERM: 'xterm' }).includes('\u001b[38;5;63m'));
+    assert.ok(coloured({ TERM: 'xterm-256color' }).includes('\u001b[38;5;63m'));
+    assert.ok(coloured({ TERM: 'xterm' }, false).includes('\u001b[94m'), 'bright blue');
+    assert.ok(!coloured({ TERM: 'xterm' }, false).includes('38;5;'));
   });
 });
 
@@ -513,6 +553,117 @@ describe("curlFormat.colors 'auto' in CI and when the output is not a terminal",
     assert.equal(autoCurlColors({ FORCE_COLOR: '1' }, { isTTY: false }), false);
     assert.equal(autoCurlColors({ CI: '1' }, { isTTY: true }), false);
     assert.equal(autoCurlColors({ NO_COLOR: '1' }, { isTTY: true }), false);
+  });
+});
+
+describe('a local run: the runner tells its workers that its stdout is a terminal', () => {
+  const RUNNER = 4242;
+  /** A tty.WriteStream: `getColorDepth` lives on the prototype, which is what tells it from Playwright's fake. */
+  const terminal = (bits?: number, isTTY = true) =>
+    Object.create(bits === undefined ? {} : { getColorDepth: () => bits }, { isTTY: { value: isTTY } }) as { isTTY: boolean };
+  /** The variable the runner would leave for its workers, `env` being the runner's environment. */
+  const marked = (
+      env: Record<string, string | undefined>,
+      { tty = true, depth }: { tty?: boolean; depth?: number } = {},
+  ): string | undefined => {
+    const target: Record<string, string | undefined> = { ...env };
+    markRunnerTty(target, terminal(depth, tty), RUNNER, () => tty);
+    return target[RUNNER_TTY_VAR];
+  };
+  /** The curl colours of a worker (pid `process.ppid` is its parent): piped stdout, FORCE_COLOR=1 like Playwright's. */
+  const workerColors = (
+      config: Parameters<typeof resolveConfig>[0],
+      env: Record<string, string | undefined>,
+  ): boolean => withEnv(
+      { ...CLEAN_ENV, FORCE_COLOR: '1', DEBUG_COLORS: '1', ...env },
+      () => withTty(false, () => resolveConfig(config)),
+  ).curlFormat.colors;
+  const fromRunner = (suffix = ':8') => ({ [RUNNER_TTY_VAR]: `${process.ppid}${suffix}` });
+
+  test('the runner marks itself with its pid and colour depth when stdout is a terminal', () => {
+    assert.equal(marked({}, { depth: 8 }), `${RUNNER}:8`);
+    assert.equal(marked({}, { depth: 4 }), `${RUNNER}:4`);
+    assert.equal(marked({}, { depth: 24 }), `${RUNNER}:24`);
+    assert.equal(marked({}), `${RUNNER}:0`, 'a depth that is not known');
+    assert.equal(marked({ FORCE_COLOR: '1', TERM: 'xterm-256color' }, { depth: 8 }), `${RUNNER}:8`);
+  });
+
+  test('nothing is set when stdout is not a terminal, or the runner would not colour its output', () => {
+    assert.equal(marked({}, { tty: false }), undefined, 'piped');
+    for (const env of [
+      { CI: '1' }, { GITHUB_ACTIONS: 'true' }, { NO_COLOR: '1' }, { TERM: 'dumb' },
+      { FORCE_COLOR: '0' }, { FORCE_COLOR: 'false' }, { DEBUG_COLORS: '0' },
+    ]) {
+      assert.equal(marked(env, { depth: 8 }), undefined, JSON.stringify(env));
+    }
+    // CI=0, NO_COLOR='' and an unset TERM are not "off"
+    assert.equal(marked({ CI: '0', NO_COLOR: '', TERM: undefined }, { depth: 8 }), `${RUNNER}:8`);
+  });
+
+  test('it is a no-op in a worker, whose fd 1 is a pipe: it does not erase what the runner set', () => {
+    const env: Record<string, string | undefined> = { [RUNNER_TTY_VAR]: '4242:8' };
+    markRunnerTty(env, terminal(8), 4300, () => false);
+    assert.equal(env[RUNNER_TTY_VAR], '4242:8');
+  });
+
+  test('a worker whose parent is the marking runner colours the curl, and uses the depth it was given', () => {
+    assert.equal(workerColors({}, fromRunner()), true);
+    assert.equal(workerColors({}, fromRunner(':0')), true);
+    assert.equal(workerColors({}, fromRunner('')), true);
+    assert.equal(workerColors({ curlFormat: { colors: 'auto' } }, fromRunner()), true);
+    assert.equal(workerColors({ colors: true }, fromRunner()), true);
+    const worker = { TERM: 'xterm', ...fromRunner(':8') };
+    assert.equal(withEnv({ ...CLEAN_ENV, ...worker }, () => withTty(false, () => curlColorDepth())), 8);
+    assert.equal(withEnv({ ...CLEAN_ENV, TERM: 'xterm', ...fromRunner(':4') }, () => withTty(false, () => curlColorDepth())), 4);
+  });
+
+  test('every gate still applies in the worker', () => {
+    const fromTerminal = fromRunner();
+    assert.equal(workerColors({}, { ...fromTerminal, CI: '1' }), false, 'CI');
+    assert.equal(workerColors({}, { ...fromTerminal, GITHUB_ACTIONS: 'true' }), false, 'GITHUB_ACTIONS');
+    assert.equal(workerColors({}, { ...fromTerminal, NO_COLOR: '1' }), false, 'NO_COLOR');
+    assert.equal(workerColors({}, { ...fromTerminal, TERM: 'dumb' }), false, 'TERM=dumb');
+    assert.equal(workerColors({ sink: () => undefined }, fromTerminal), false, 'custom sink');
+    assert.equal(workerColors({ sink: () => undefined, colors: true }, fromTerminal), false, 'custom sink, colors: true');
+    assert.equal(workerColors({ colors: false }, fromTerminal), false, 'colors: false');
+    assert.equal(workerColors({ curlFormat: { colors: false } }, fromTerminal), false, 'curlFormat.colors: false');
+    assert.equal(workerColors({}, { ...fromTerminal, FORCE_COLOR: '0' }), false, 'FORCE_COLOR=0');
+    assert.equal(workerColors({ sink: () => undefined, curlFormat: { colors: true } }, fromTerminal), true, 'curlFormat.colors: true overrides');
+    assert.equal(workerColors({ curlFormat: { colors: true } }, { ...fromTerminal, CI: '1', NO_COLOR: '1' }), true, 'curlFormat.colors: true overrides');
+  });
+
+  test('a value that is not the parent pid is ignored: nested runs, a copy made by hand', () => {
+    for (const value of [`${process.ppid + 1}:8`, '1', '1:8', 'true', '', `${process.ppid}x`, `${process.ppid}:`, `-${process.ppid}`]) {
+      assert.equal(workerColors({}, { [RUNNER_TTY_VAR]: value }), false, JSON.stringify(value));
+    }
+    assert.equal(workerColors({}, {}), false, 'no variable');
+  });
+
+  test('without the variable a piped worker stays plain, also with the fake terminal of Playwright 1.30-1.39', () => {
+    // setTtyParams: isTTY = true plus own getColorDepth/hasColors on a stream that is a pipe
+    const fake = { isTTY: true, getColorDepth: () => 8, hasColors: () => true };
+    assert.equal(autoCurlColors({ FORCE_COLOR: '1' }, fake, 100), false);
+    assert.equal(autoCurlColors({ FORCE_COLOR: '1', [RUNNER_TTY_VAR]: '100:8' }, fake, 100), true, 'the runner says it is a terminal');
+    assert.equal(autoCurlColors({ [RUNNER_TTY_VAR]: '100:8', CI: '1' }, fake, 100), false);
+    assert.equal(autoCurlColors({ [RUNNER_TTY_VAR]: '100:8', NO_COLOR: '1' }, fake, 100), false);
+    assert.equal(autoCurlColors({ [RUNNER_TTY_VAR]: '100:8', TERM: 'dumb' }, fake, 100), false);
+    assert.equal(autoCurlColors({ [RUNNER_TTY_VAR]: '100:8' }, { isTTY: false }, 101), false, 'another parent');
+    assert.equal(autoCurlColors({ [RUNNER_TTY_VAR]: '100:8' }, undefined, 100), true);
+  });
+
+  test('colour depth: COLORTERM, TERM, the runner, then a real terminal; else 16 colours', () => {
+    assert.equal(curlColorDepth({ COLORTERM: 'truecolor' }, undefined, 1), 8);
+    assert.equal(curlColorDepth({ COLORTERM: 'TrueColor' }, undefined, 1), 8);
+    assert.equal(curlColorDepth({ COLORTERM: '24bit' }, undefined, 1), 8);
+    assert.equal(curlColorDepth({ TERM: 'screen-256color' }, undefined, 1), 8);
+    assert.equal(curlColorDepth({ TERM: 'xterm' }, undefined, 1), 4);
+    assert.equal(curlColorDepth({}, undefined, 1), 4);
+    assert.equal(curlColorDepth({ TERM: 'xterm', [RUNNER_TTY_VAR]: '1:24' }, undefined, 1), 8);
+    assert.equal(curlColorDepth({ TERM: 'xterm', [RUNNER_TTY_VAR]: '1:4' }, undefined, 1), 4);
+    assert.equal(curlColorDepth({ TERM: 'xterm', [RUNNER_TTY_VAR]: '2:8' }, undefined, 1), 4, 'not the parent');
+    assert.equal(curlColorDepth({ TERM: 'xterm' }, terminal(8), 1), 8, 'a real terminal that reports 8 bits');
+    assert.equal(curlColorDepth({ TERM: 'xterm' }, terminal(4), 1), 4);
+    assert.equal(curlColorDepth({ TERM: 'xterm' }, { isTTY: true, getColorDepth: () => 8 }, 1), 4, "Playwright's fake terminal does not count");
   });
 });
 

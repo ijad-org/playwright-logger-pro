@@ -11,9 +11,12 @@ export interface CurlFormatConfig {
    * Colour the printed curl command (the `curl.sh` file and attachment are never coloured).
    * - 'auto' (default): coloured only when ALL of these hold: NO_COLOR is not set (it always
    *   wins here), the process is not on CI, the output really reaches a terminal (stdout is a
-   *   TTY, or PLAYWRIGHT_FORCE_TTY is set), the resolved `colors` is true and the sink is the
-   *   default console one. `colors: true` alone, FORCE_COLOR and the FORCE_COLOR=1 that
+   *   TTY, or the test runner's own stdout is one, which the runner tells its workers through
+   *   PLP_RUNNER_TTY, or PLAYWRIGHT_FORCE_TTY is set), TERM is not dumb, the resolved `colors` is
+   *   true and the sink is the default console one. So a local `npx playwright test` in a
+   *   terminal needs no setting. `colors: true` alone, FORCE_COLOR and the FORCE_COLOR=1 that
    *   Playwright gives its workers do not colour the curl in CI or when piped.
+   *   The 256-colour palette is used when COLORTERM/TERM/the terminal say so, else the 16 basic colours.
    * - true: colours on. An explicit override: it bypasses the CI, NO_COLOR and terminal checks
    *   and the sink check, so ANSI codes can end up in CI logs or a custom sink.
    * - false: colours off.

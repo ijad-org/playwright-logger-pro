@@ -1,3 +1,8 @@
+import { markRunnerTty } from './env';
+
+// See fixtures.ts: lets Playwright workers know the runner's stdout is a terminal.
+markRunnerTty();
+
 export { wrapRequestContext } from './wrapRequestContext';
 export { buildCurl } from './curl';
 export type { CurlOptions } from './curl';

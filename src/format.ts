@@ -1,6 +1,9 @@
 import { createColors } from 'picocolors';
 import type { ResolvedConfig } from './types';
 import { redactUrl } from './redact';
+import { curlColorizer } from './curlPalette';
+import type { CurlColorDepth } from './curlPalette';
+import { curlColorDepth } from './env';
 
 export type Colorizer = (s: string) => string;
 
@@ -11,9 +14,9 @@ export interface Palette {
   bold: Colorizer;
   arrowOut: Colorizer;
   arrowIn: Colorizer;
-  // The curl command uses the colours below. They are chosen to read on the default
-  // (black-on-white and white-on-black) xterm palettes: no white, yellow or cyan text, and
-  // no dim, which vanishes on some terminals. Flags, quotes and punctuation stay uncoloured.
+  // The curl command uses the colours below (see curlPalette.ts). They are chosen to read on
+  // the default black and white xterm backgrounds: no white, yellow or cyan text, and no dim,
+  // which vanishes on some terminals. Flags, quotes and punctuation stay uncoloured.
   /** The `curl` word. */
   curl: Colorizer;
   /** HTTP method after `-X`. */
@@ -38,7 +41,11 @@ const identity: Colorizer = (s) => s;
 // over picocolors' own env detection (NO_COLOR, non-TTY, ...).
 const pc = createColors(true);
 
-export function palette(colors: boolean): Palette {
+/**
+ * The colours for the log lines and the curl command. The curl colours depend on how many colours
+ * the terminal shows (`depth`, detected when omitted); the log lines use the 16 basic ones.
+ */
+export function palette(colors: boolean, depth?: CurlColorDepth): Palette {
   if (!colors) {
     return {
       method: () => identity,
@@ -57,6 +64,8 @@ export function palette(colors: boolean): Palette {
       comment: identity,
     };
   }
+  const d = depth ?? curlColorDepth();
+  const curl = (element: Parameters<typeof curlColorizer>[0]): Colorizer => curlColorizer(element, d);
   return {
     method: (method: string) => {
       switch (method.toUpperCase()) {
@@ -81,20 +90,20 @@ export function palette(colors: boolean): Palette {
     curl: pc.bold,
     curlMethod: (method: string) => {
       switch (method.toUpperCase()) {
-        case 'GET': return pc.blue;
-        case 'POST': return pc.green;
+        case 'GET': return curl('methodGet');
+        case 'POST': return curl('methodPost');
         case 'PUT':
-        case 'PATCH': return pc.magenta;
-        case 'DELETE': return pc.red;
+        case 'PATCH': return curl('methodWrite');
+        case 'DELETE': return curl('methodDelete');
         default: return pc.bold;
       }
     },
-    url: pc.blue,
-    name: pc.magenta,
-    key: pc.blue,
-    string: pc.green,
+    url: curl('url'),
+    name: curl('name'),
+    key: curl('key'),
+    string: curl('string'),
     mask: (s: string) => pc.bold(pc.inverse(s)),
-    comment: pc.gray,
+    comment: curl('comment'),
   };
 }
 

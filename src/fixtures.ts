@@ -12,6 +12,11 @@ import { writeOutputs } from './browser/output';
 import { wrapTestType } from './browser/steps';
 import { resolveBrowserConfig } from './browser/types';
 import type { BrowserLoggerConfig } from './browser/types';
+import { markRunnerTty } from './env';
+
+// Spec files are loaded in the runner process: if its stdout is a terminal, tell the workers
+// (their own stdout is a pipe) so the printed curl is coloured by default. Does nothing in a worker.
+markRunnerTty();
 
 export interface ApiLoggerOptions {
   /**

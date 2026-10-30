@@ -9,6 +9,8 @@ description: Fixes for missing colours, missing logs, duplicate lines, TypeScrip
 
 With `colors` unset, the default follows the environment: off for `NO_COLOR` or `FORCE_COLOR=0`, on for any other `FORCE_COLOR`/`DEBUG_COLORS` or `PLAYWRIGHT_FORCE_TTY`, on for a TTY. `playwright test` sets `FORCE_COLOR` for its workers, so colours are normally on.
 
+The printed **curl** is stricter: plain in CI, under `NO_COLOR` and `TERM=dumb`, and when the runner's output is piped. In a local terminal it is coloured with no setting (the runner tells its workers that its stdout is a terminal). If it is plain where you expect colours, check that `CI` and `NO_COLOR` are unset, that the output is not piped (`| tee`, an IDE panel) and that a spec file imports `playwright-logger-pro`; then force it with `PLAYWRIGHT_FORCE_TTY=1` or `curlFormat: { colors: true }`. See [When the curl is coloured](./api-logging.mdx#curl-colours-gate).
+
 :::note Playwright 1.64 with piped output
 `colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), the reporter strips every ANSI code from the test stdout it forwards, so the console shows no colours even with `colors: true`. The sink files keep them: lines sent to a `sink` (a file, an attachment) arrive with the colours intact. Run in a terminal, or use a `sink`.
 :::

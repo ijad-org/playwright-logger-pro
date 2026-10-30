@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runMeta } from './run';
+import { ptyUnavailable, runMeta } from './run';
 
 const ESC = '\u001b';
 // eslint-disable-next-line no-control-regex
@@ -29,6 +29,28 @@ const runs = {
   forceTty: runMeta(['curlcolor.spec.ts'], { ...FORCE, PLAYWRIGHT_FORCE_TTY: '1' }),
   forceTtyInCi: runMeta(['curlcolor.spec.ts'], { ...FORCE, PLAYWRIGHT_FORCE_TTY: '1', CI: '1' }),
   noColor: runMeta(['curlcolor.spec.ts'], { ...FORCE, NO_COLOR: '1', PLAYWRIGHT_FORCE_TTY: '1' }),
+};
+
+// A local `npx playwright test`: the runner's stdout is a terminal (a pseudo-terminal made by
+// `script`), no CI, no NO_COLOR, no FORCE_COLOR and no PLAYWRIGHT_FORCE_TTY. The workers' stdout
+// is still a pipe (on 1.30-1.39 made to look like a terminal), so only the runner can tell them.
+const LOCAL = { NO_COLOR: undefined, FORCE_COLOR: undefined, DEBUG_COLORS: undefined, COLORTERM: undefined, TERM: 'xterm-256color' };
+const noPty = ptyUnavailable();
+const pty = (env: Record<string, string | undefined>) => runMeta(['curlcolor.spec.ts'], { ...LOCAL, ...env }, { pty: true });
+const ptyRuns = noPty ? undefined : {
+  local: pty({}),
+  local16: pty({ TERM: 'xterm' }),
+  truecolor: pty({ TERM: 'xterm', COLORTERM: 'truecolor' }),
+  ci: pty({ CI: '1' }),
+  githubActions: pty({ GITHUB_ACTIONS: 'true' }),
+  noColor: pty({ NO_COLOR: '1' }),
+  dumb: pty({ TERM: 'dumb' }),
+  forceColor0: pty({ FORCE_COLOR: '0' }),
+};
+// Piped runner (no terminal) with the variable set by hand or left over from another process.
+const handmade = {
+  one: runMeta(['curlcolor.spec.ts'], { ...FORCE, PLP_RUNNER_TTY: '1' }),
+  withDepth: runMeta(['curlcolor.spec.ts'], { ...FORCE, PLP_RUNNER_TTY: `${process.pid}:8` }),
 };
 
 const AUTO = 'curl color: auto';
@@ -91,4 +113,53 @@ test('the curl.sh attachment is never coloured, whatever the console shows', () 
       assert.ok((files[0].body ?? '').includes('Authorization: ***'), title);
     }
   }
+});
+
+const ptyTest = (name: string, fn: (runs: NonNullable<typeof ptyRuns>) => void): void => {
+  test(name, { skip: noPty }, () => fn(ptyRuns!));
+};
+const SGR_256 = `${ESC}[38;5;`;
+
+/** The runner's own terminal is enough: a local run colours the curl without any opt-in. */
+ptyTest('a local run on a terminal colours the curl by default, in 256 colours', ({ local }) => {
+  for (const title of [AUTO, TOP, EXPLICIT]) {
+    colouredCurl(local, title);
+    assert.ok(curlLines(local.find(title).stdout).some((l) => l.includes(SGR_256)), `${title}: 256-colour codes`);
+  }
+});
+
+ptyTest('a local run on a 16-colour terminal uses the basic colours; truecolor gets 256', ({ local16, truecolor }) => {
+  for (const title of [AUTO, TOP]) {
+    colouredCurl(local16, title);
+    const lines = curlLines(local16.find(title).stdout);
+    assert.ok(lines.every((l) => !l.includes(SGR_256)), `no 256-colour codes:\n${JSON.stringify(lines)}`);
+    assert.ok(lines.some((l) => l.includes(`${ESC}[94m`)), 'bright blue URL');
+    assert.ok(curlLines(truecolor.find(title).stdout).some((l) => l.includes(SGR_256)));
+  }
+});
+
+ptyTest('a local run: the coloured curl strips to the same command as the plain one, curl.sh is plain', ({ local, ci }) => {
+  for (const title of [AUTO, TOP]) {
+    // every run has its own server port
+    const sameCommand = (stdout: string): string[] => curlLines(stdout).map((l) => stripAnsi(l).replace(/127\.0\.0\.1:\d+/, 'host'));
+    const coloured = sameCommand(local.find(title).stdout);
+    const plain = sameCommand(ci.find(title).stdout);
+    assert.deepEqual(coloured, plain, title);
+    const files = local.find(title).attachments.filter((a) => a.name === 'curl.sh');
+    assert.equal(files.length, 1);
+    assert.ok(!(files[0].body ?? '').includes(ESC));
+  }
+});
+
+ptyTest('a terminal does not beat CI, NO_COLOR, TERM=dumb or FORCE_COLOR=0', ({ ci, githubActions, noColor, dumb, forceColor0 }) => {
+  for (const run of [ci, githubActions, noColor, dumb, forceColor0]) for (const title of [AUTO, TOP]) plainCurl(run, title);
+});
+
+ptyTest('explicit curlFormat.colors: true still colours the curl in CI, under NO_COLOR and on TERM=dumb', ({ ci, noColor, dumb }) => {
+  for (const run of [ci, noColor, dumb]) colouredCurl(run, EXPLICIT);
+});
+
+test('a PLP_RUNNER_TTY set by hand does not colour a piped run: it names no parent', () => {
+  for (const run of Object.values(handmade)) for (const title of [AUTO, TOP]) plainCurl(run, title);
+  for (const run of Object.values(handmade)) colouredCurl(run, EXPLICIT);
 });
