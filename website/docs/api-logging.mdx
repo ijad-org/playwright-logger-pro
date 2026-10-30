@@ -153,7 +153,7 @@ What the curl reproduces:
 
 ### Colours and single-line output {#curl-colours}
 
-On the console the curl is coloured like the log lines. `curl` is bold; the method has its log-line colour (GET cyan, POST green, PUT yellow, PATCH magenta, DELETE red); flags (`-X`, `-H`, `--data-raw`, `-F`, `--form-string`, `--data-urlencode`, `--data-binary`, `-L`, `--head`), the `\` continuations and the quotes around values are dim; the URL is cyan with blue query parameter names and dim `?`, `&`, `=`; header names are magenta and the `:` dim; a masked `***` is bold yellow; a JSON body gets blue keys, yellow strings and dim punctuation (only when the body is valid JSON, anything else stays uncoloured); `#` comment lines are dim.
+On the console the curl is coloured like the log lines. `curl` is bold; the method is blue (GET), green (POST), magenta (PUT, PATCH) or red (DELETE); the URL is blue with magenta query parameter names; header names are magenta; a masked `***` is bold and reversed (inverse video); a JSON body gets blue keys and green strings (only when the body is valid JSON, anything else stays uncoloured); `#` comment lines are grey. Flags (`-X`, `-H`, `--data-raw`, `-F`, `--form-string`, `--data-urlencode`, `--data-binary`, `-L`, `--head`), the `\` continuations, quotes and punctuation keep the terminal's default colour. The palette avoids white, yellow, cyan and dim text, which are hard to read on one of the default light or dark xterm themes.
 
 The colours only decorate the text. Remove the ANSI codes and you get exactly the plain command, so what you copy from a terminal that strips them is safe to paste. With colours off the output is the plain command, byte for byte.
 
@@ -169,16 +169,44 @@ use: {
 }
 ```
 
-- `colors: 'auto'` follows the resolved [`colors`](./configuration.mdx#environment-variables), so `NO_COLOR` turns the curl colours off too. It applies **only to the default console sink**: with a custom `sink` the curl is plain unless `curlFormat.colors` is `true`.
 - `multiline: false` joins the options with single spaces. `#` notes (a truncated body, a binary body, the steps of a redirect chain) stay on their own lines above the command, each starting with `#`.
+
+#### When the curl is coloured {#curl-colours-gate}
+
+With `colors: 'auto'` (the default) the curl is coloured only when **all** of these hold:
+
+1. `NO_COLOR` is not set to a non-empty value. It always wins under `'auto'`, even over a top-level `colors: true`.
+2. The process is not on CI: none of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TRAVIS`, `APPVEYOR`, `TF_BUILD`, `TEAMCITY_VERSION`, `JENKINS_URL`, `BITBUCKET_BUILD_NUMBER`, `CODEBUILD_BUILD_ID` or `DRONE` is set to a value other than `0` or `false`.
+3. The output really reaches a terminal: `process.stdout` is a TTY, or `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`), and `TERM` is not `dumb`.
+4. The resolved [`colors`](./configuration.mdx#environment-variables) is true and the sink is the default console sink. A custom `sink` keeps the curl plain.
+
+`FORCE_COLOR` does not count. `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe and Playwright gives a worker no other signal about the runner's terminal. So **in a Playwright worker the curl stays plain unless you opt in**, with `PLAYWRIGHT_FORCE_TTY=1` (you state that the runner's terminal is a TTY) or `curlFormat.colors: true`. A top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines.
+
+:::warning Explicit override
+`curlFormat: { colors: true }` is an **explicit override**: the curl is coloured whatever `NO_COLOR`, CI, the terminal, the top-level `colors` and the sink say. Use it only when you know where the output goes; ANSI codes will end up in CI logs, files and custom sinks. `curlFormat: { colors: false }` never colours.
+:::
+
+```sh
+PLAYWRIGHT_FORCE_TTY=1 npx playwright test   # coloured curl from the workers, in your own terminal
+```
 
 ### The `curl.sh` file {#curl-file}
 
 With the `test` fixture, the curls a test printed are also collected in a script. When the test ends (passed or failed) and at least one curl was produced, the fixture:
 
-1. writes `curl.sh` to the test's output directory: a `#!/bin/sh` line, a `# <test title>` comment, then the commands one after the other;
+1. writes `curl.sh` to the test's output directory;
 2. attaches it to the report as `curl.sh` (`text/plain`);
-3. prints one line through the `sink`: `curl.sh: <relative path>`. The path is a clickable terminal hyperlink (OSC 8) only when colours are on for the console, stdout is a TTY and `CI` is not set; otherwise it is plain text.
+3. prints one line through the `sink`: `curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)`.
+
+The header of the file is `#!/bin/sh`, then the spec file and line of the test, relative to the config's `rootDir` (or the project's `testDir`), then a generic comment, then the commands one after the other:
+
+```sh
+#!/bin/sh
+# tests/users.spec.ts:42
+# redacted curl commands of this test; run with: sh curl.sh
+```
+
+**The test title is not written to the file**, and the notice names no path. Titles can contain data (a URL with a token, a user name) and Playwright derives the output folder name from them, so neither goes into the file, the attachment or the console line. The location has escape sequences (ANSI, OSC 8, OSC 52) and every control character removed, so it cannot start a command or write to the terminal.
 
 The script is **never coloured** and uses the same builder and the same redaction lists as the printed curl, so masked values are `***` in the file and in the attachment. There is no setting that writes unredacted values: put the real values back before you run it with `sh curl.sh`. The file follows `multiline`. Turn it off with `curlFormat: { file: false }`; it does nothing while `curl` is `false`, and with `curl: 'on-failure'` it only exists if a request failed.
 
@@ -210,7 +238,7 @@ Custom lists are **added** to the defaults, never replace them. See [Redaction &
 
 With `colors` unset, the logger decides like Playwright's reporters, in this order: off for a non-empty `NO_COLOR` or `FORCE_COLOR=0`/`false`; on for any other `FORCE_COLOR` or `DEBUG_COLORS`; on for `PLAYWRIGHT_FORCE_TTY`; on when stdout or stderr is a TTY (unless `TERM=dumb`). `colors: true` or `false` always wins, including over `NO_COLOR`. See [Configuration](./configuration.mdx#environment-variables).
 
-With a custom `sink` and no explicit `colors`, colours default to **off** for every line, so ANSI codes do not end up in a file. Set `colors: true` to keep them (for example when the sink feeds a CI log that renders colours). The curl has its own switch, [`curlFormat.colors`](#curl-colours).
+With a custom `sink` and no explicit `colors`, colours default to **off** for every line, so ANSI codes do not end up in a file. Set `colors: true` to keep them (for example when the sink feeds a CI log that renders colours). The curl has its own, stricter rule: [`curlFormat.colors`](#curl-colours-gate).
 
 ## Redirect the output
 

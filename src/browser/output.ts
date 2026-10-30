@@ -13,7 +13,11 @@ export interface TestInfoLike {
   titlePath?: string[];
   status?: string;
   expectedStatus?: string;
-  project?: { name?: string };
+  project?: { name?: string; testDir?: string };
+  config?: { rootDir?: string };
+  /** Absolute path of the spec file and the line of the test. */
+  file?: string;
+  line?: number;
   retry?: number;
   repeatEachIndex?: number;
   testId?: string;

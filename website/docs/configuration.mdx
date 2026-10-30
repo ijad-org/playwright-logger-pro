@@ -61,11 +61,11 @@ Presentation of the curl command. Only the printed command changes; the redactio
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `colors` | `boolean \| 'auto'` | `'auto'` | `true`/`false` force colours on/off. `'auto'` follows the resolved `colors`, but only for the default console sink: with a custom `sink` the curl stays plain unless you set `curlFormat.colors: true`. `NO_COLOR` therefore turns the curl colours off under `'auto'`. |
+| `colors` | `boolean \| 'auto'` | `'auto'` | `'auto'` colours the curl only when `NO_COLOR` is unset, the process is not on CI, the output is a terminal (stdout is a TTY, or `PLAYWRIGHT_FORCE_TTY` is set), the resolved `colors` is true and the sink is the default console one. `FORCE_COLOR` and a top-level `colors: true` alone do not colour it in CI or when piped. `true` is an **explicit override** that skips all of these checks (ANSI codes may reach CI logs, files and custom sinks); `false` never colours. See [When the curl is coloured](./api-logging.mdx#curl-colours-gate). |
 | `multiline` | `boolean` | `true` | `false` prints the command on a single line, options joined by single spaces. Notes and redirect step comments stay on their own `#` lines above it. |
-| `file` | `boolean` | `true` | With the `test` fixture, write the test's curls to `curl.sh`, attach it and print its path. Only applies while `curl` is enabled. |
+| `file` | `boolean` | `true` | With the `test` fixture, write the test's curls to `curl.sh`, attach it to the report and print a one-line notice (no path, no test title). The file header is `#!/bin/sh` and the spec file and line of the test. Only applies while `curl` is enabled. |
 
-See [API logging › curl output](./api-logging.mdx#curl-output) for the colours and the `curl.sh` file.
+See [API logging › curl output](./api-logging.mdx#curl-colours) for the colours, the colouring rules and the `curl.sh` file.
 
 ## browserLog options {#browserlog-options}
 

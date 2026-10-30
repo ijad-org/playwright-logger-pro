@@ -42,7 +42,9 @@ use: {
 With `replaceDefaultRedaction: true`, anything not in your lists is printed in clear text, including `Authorization` and `Cookie` headers. The switch also drops the browser log's default `redact.selectors` and `redact.keys` and its query-parameter masking.
 :::
 
-A redacted curl contains the literal text `***`. Replace it with the real value before replaying. The `curl.sh` file and its report attachment are built by the same code with the same lists, are never coloured, and there is no setting that writes unredacted values.
+A redacted curl contains the literal text `***`. Replace it with the real value before replaying. The `curl.sh` file and its report attachment are built by the same code with the same lists, are never coloured, and there is no setting that writes unredacted values. They do not contain the test title, and the console notice names no path (the output folder is named after the title).
+
+`redactBodyKeys` is **empty by default**, so no body value is masked until you configure it for the keys of your API. It masks JSON and form keys and multipart field names only: XML and other raw text bodies are not scrubbed. Playwright's own HTML report step titles show the full URL of every `request.get(...)` call, query string included, and the logger cannot mask them (see [Known limits](#known-limits)).
 
 ## Browser logging
 
@@ -173,6 +175,7 @@ The same applies to `httpCredentials` in `test.use`: Playwright reads `test.use(
 Masking covers what this logger outputs. Artifacts that Playwright itself writes can contain the raw values, **even with traces off** (`trace: 'off'`):
 
 - **HTML report step titles.** Playwright puts action arguments into step titles and the report keeps them: on newer versions as `Fill "<the value>"` (seen on 1.64), and on older versions some steps carry values too. Do not assume any version is clean.
+- **Request URLs in step titles.** The steps of `request.get(...)` and the other `APIRequestContext` calls show the full request URL, query string included, in the HTML report. The logger cannot mask them: keep secrets out of URLs, or do not share the report.
 - **`error-context.md`.** For failed tests, newer Playwright versions attach a page snapshot that includes the current values of form fields (seen on 1.64).
 - **Traces, screenshots and videos**, when enabled, hold raw action parameters and page content.
 - The same raw values are visible to other reporters (`json`, `blob`, `junit`, custom ones) and in Playwright's own error messages and call logs.

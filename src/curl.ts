@@ -29,11 +29,11 @@ type Paint = (p: Palette) => Colorizer;
 interface Token { text: string; paint?: Paint }
 
 const tok = (text: string, paint?: Paint): Token => ({ text, paint });
-const DIM: Paint = (p) => p.dim;
-const WARN: Paint = (p) => p.warn;
+const MASK: Paint = (p) => p.mask;
+const COMMENT: Paint = (p) => p.comment;
 const URL_PAINT: Paint = (p) => p.url;
 const NAME: Paint = (p) => p.name;
-const HEADER: Paint = (p) => p.header;
+const KEY: Paint = (p) => p.key;
 const STRING: Paint = (p) => p.string;
 const SPACE = tok(' ');
 
@@ -49,7 +49,7 @@ function joinTokens(groups: readonly Token[][], separator: readonly Token[]): To
 function withMasks(text: string, paint?: Paint): Token[] {
   const out: Token[] = [];
   text.split(REDACTED).forEach((part, i) => {
-    if (i > 0) out.push(tok(REDACTED, WARN));
+    if (i > 0) out.push(tok(REDACTED, MASK));
     if (part) out.push(tok(part, paint));
   });
   return out;
@@ -64,20 +64,20 @@ const BINARY_BODY_FILE = 'request-body.bin';
  */
 function quoted(inner: readonly Token[]): Token[] {
   return [
-    tok("'", DIM),
+    tok("'"),
     ...inner.map((t) => ({ ...t, text: t.text.replace(/'/g, `'\\''`) })),
-    tok("'", DIM),
+    tok("'"),
   ];
 }
 
 /** `flag 'value'` */
 function option(flag: string, value: readonly Token[]): Token[] {
-  return [tok(flag, DIM), SPACE, ...quoted(value)];
+  return [tok(flag), SPACE, ...quoted(value)];
 }
 
 /** `name=value` with the name and `=` coloured. */
 function pair(name: string, value: string, namePaint: Paint = NAME): Token[] {
-  return [tok(name, namePaint), tok('=', DIM), ...withMasks(value)];
+  return [tok(name, namePaint), tok('='), ...withMasks(value)];
 }
 
 /** An (already redacted) URL: query parameter names and the separators get their own colour. */
@@ -87,9 +87,9 @@ function urlTokens(url: string): Token[] {
   const queryAt = beforeHash.indexOf('?');
   const out = [tok(queryAt === -1 ? beforeHash : beforeHash.slice(0, queryAt), URL_PAINT)];
   if (queryAt !== -1) {
-    out.push(tok('?', DIM));
+    out.push(tok('?'));
     beforeHash.slice(queryAt + 1).split('&').forEach((param, i) => {
-      if (i > 0) out.push(tok('&', DIM));
+      if (i > 0) out.push(tok('&'));
       const eq = param.indexOf('=');
       if (eq === -1) out.push(tok(param, NAME));
       else out.push(...pair(param.slice(0, eq), param.slice(eq + 1)));
@@ -119,9 +119,9 @@ function bodyTokens(text: string, colors: boolean): Token[] {
     const piece = match[0];
     if (piece[0] === '"') {
       COLON_AHEAD.lastIndex = match.index + piece.length;
-      out.push(...withMasks(piece, COLON_AHEAD.test(text) ? NAME : STRING));
+      out.push(...withMasks(piece, COLON_AHEAD.test(text) ? KEY : STRING));
     } else if (piece.length === 1 && '{}[],:'.includes(piece)) {
-      out.push(tok(piece, DIM));
+      out.push(tok(piece));
     } else {
       out.push(tok(piece));
     }
@@ -135,7 +135,7 @@ function formValue(value: string): string {
 }
 
 function contentTypeHeader(value: string): Token[] {
-  return [tok('Content-Type', HEADER), tok(':', DIM), tok(` ${value}`)];
+  return [tok('Content-Type', NAME), tok(':'), tok(` ${value}`)];
 }
 
 function isValidUrl(url: string): boolean {
@@ -192,7 +192,7 @@ function buildRedirectSteps(
     options: CurlOptions,
 ): string {
   const p = palette(Boolean(options.colors));
-  const comment = (text: string): string => render([tok(text, DIM)], p);
+  const comment = (text: string): string => render([tok(text, COMMENT)], p);
   const out = [
     comment(`# the request was redirected ${hops.length - 1} time(s). Playwright's redirect rules ` +
     'cannot be replayed by a single curl, so there is one command per step'),
@@ -248,7 +248,7 @@ export function buildCurl(
     redactQueryParams = [], redactBodyKeys = [], maxBodyLength, colors = false, multiline = true,
   } = options;
   const p = palette(colors);
-  if (!isValidUrl(info.url)) return render([tok('# could not build curl: invalid URL', DIM)], p);
+  if (!isValidUrl(info.url)) return render([tok('# could not build curl: invalid URL', COMMENT)], p);
   const method = info.method.toUpperCase();
   const parts = multipartParts(info.multipart, redactBodyKeys);
   const hasBody = (parts !== undefined && parts.length > 0) ||
@@ -270,12 +270,12 @@ export function buildCurl(
     (follow && method === 'POST' && hasBody);
   const methodTokens: Token[][] = method === 'HEAD' ?
     // -X HEAD makes curl wait for a response body that never comes.
-    [[tok('--head', DIM)]] :
-    (impliedMethod ? [] : [[tok('-X', DIM), SPACE, tok(method, (pal) => pal.method(method))]]);
+    [[tok('--head')]] :
+    (impliedMethod ? [] : [[tok('-X'), SPACE, tok(method, (pal) => pal.curlMethod(method))]]);
   const head: Token[][] = [
     [tok('curl', (pal) => pal.curl)],
     ...methodTokens,
-    ...(follow ? [[tok('-L', DIM)]] : []),
+    ...(follow ? [[tok('-L')]] : []),
     quoted(urlTokens(redactUrl(info.url, redactQueryParams))),
   ];
   const lines: Token[][] = [joinTokens(head, [SPACE])];
@@ -293,7 +293,7 @@ export function buildCurl(
 
   const headers = redactHeaders(info.headers ?? {}, redact);
   for (const [key, value] of Object.entries(headers)) {
-    lines.push(option('-H', [tok(key, HEADER), tok(':', DIM), tok(' '), ...withMasks(value)]));
+    lines.push(option('-H', [tok(key, NAME), tok(':'), tok(' '), ...withMasks(value)]));
   }
 
   // Files whose content only existed in memory are referenced by filename;
@@ -351,9 +351,9 @@ export function buildCurl(
     notes.push(`# request body truncated to maxBodyLength (${maxBodyLength} of ` +
       `${Math.max(...truncated)} chars); the replayed body is incomplete`);
   }
-  const separator = multiline ? [SPACE, tok('\\', DIM), tok('\n  ')] : [SPACE];
+  const separator = multiline ? [SPACE, tok('\\'), tok('\n  ')] : [SPACE];
   return [
-    ...notes.map((note) => render([tok(note, DIM)], p)),
+    ...notes.map((note) => render([tok(note, COMMENT)], p)),
     render(joinTokens(lines, separator), p),
   ].join('\n');
 }

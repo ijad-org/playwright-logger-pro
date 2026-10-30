@@ -102,10 +102,7 @@ export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtur
     const config = _plpSession ? _plpSession.teeApiLog(resolved) : resolved;
     const curls: string[] = [];
     await use(wrapRequestContext(request, config, { onCurl: (plain) => curls.push(plain) }));
-    await writeCurlScript(curls, testInfo, {
-      log: config.sink,
-      consoleColors: resolved.colors && typeof apiLog.sink !== 'function',
-    });
+    await writeCurlScript(curls, testInfo, { log: config.sink });
   },
 
   browserLogger: async ({ _plpSession }, use) => {

@@ -269,7 +269,7 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a no-op pass-through. |
-| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR`). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
+| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR` for the log lines; the curl follows [its own rule](#when-the-curl-is-coloured)). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
 | `curl` | `boolean \| 'on-failure'` | `false` | Print equivalent curl: never / always / only when status isn't 2xx. |
 | `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl looks and is saved: ANSI colours (`true`, `false` or `'auto'`), one option per line or a single line, and the `curl.sh` file. See [curl output](#curl-output). |
 | `logHeaders` | `boolean` | `true` | Log request/response headers. |
@@ -300,7 +300,7 @@ If your runner or CI does not set `FORCE_COLOR` for the workers and the output i
 use: { apiLog: { colors: true } }
 ```
 
-**Custom `sink`.** When you pass a `sink` and do not set `colors`, colors default to **off** for every line (the sink may write to a file, and ANSI codes in a file are noise). An explicit `colors: true` keeps them, for a sink that feeds a terminal or a CI log that renders them. The curl has its own rule, see [curl output](#curl-output).
+**Custom `sink`.** When you pass a `sink` and do not set `colors`, colors default to **off** for every line (the sink may write to a file, and ANSI codes in a file are noise). An explicit `colors: true` keeps them, for a sink that feeds a terminal or a CI log that renders them. The curl has its own, stricter rule: see [When the curl is coloured](#when-the-curl-is-coloured).
 
 > **Note:** `colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), Playwright strips every ANSI code from the test stdout it forwards, so the console shows no colors even with `colors: true`. Run in a terminal, or send the lines to a `sink` (a file, an attachment): the `sink` receives them with the colors intact.
 
@@ -322,15 +322,50 @@ use: { apiLog: { curl: true, curlFormat: { colors: 'auto', multiline: true, file
 
 | `curlFormat` option | Default | Effect |
 | --- | --- | --- |
-| `colors` | `'auto'` | `true` / `false` force colours on / off. `'auto'` follows the resolved [`colors`](#colors), **but only on the default console sink**: with a custom `sink` the curl stays plain unless you set `curlFormat.colors: true`. |
+| `colors` | `'auto'` | `true` / `false` force colours on / off. `'auto'` colours only in a real terminal, outside CI and without `NO_COLOR`, on the default console sink (see [When the curl is coloured](#when-the-curl-is-coloured)). `true` is an explicit override that skips those checks. |
 | `multiline` | `true` | `false` prints the command on one line, options joined by single spaces. Comments (`# …` notes, redirect steps) stay on their own lines above the command. |
-| `file` | `true` | With the `test` fixture, collect the test's curls into a `curl.sh` file, attach it and print its path. Only applies while `curl` is on. |
+| `file` | `true` | With the `test` fixture, collect the test's curls into a `curl.sh` file, attach it to the report and print a one-line notice. Only applies while `curl` is on. |
 
-**Colours.** `curl` is bold; the method has the colour of the log lines (GET cyan, POST green, PUT yellow, PATCH magenta, DELETE red); flags (`-X`, `-H`, `--data-raw`, …), the `\` continuations and the quotes around values are dim; the URL is cyan with blue query parameter names and dim `?` `&` `=`; header names are magenta and the `:` dim; a masked `***` is bold yellow; a JSON body (only when it is valid JSON) gets blue keys, yellow strings and dim punctuation; `#` comment lines are dim. Colours only decorate the text: removing the ANSI codes always gives exactly the plain command, so quoting stays safe. With colours off the output is byte-for-byte the plain command.
+**Colours.** `curl` is bold; the method is blue (GET), green (POST), magenta (PUT, PATCH) or red (DELETE); the URL is blue with magenta query parameter names; header names are magenta; a masked `***` is bold and reversed; a JSON body (only when it is valid JSON) gets blue keys and green strings; `#` comment lines are grey. Flags (`-X`, `-H`, `--data-raw`, …), the `\` continuations, quotes and punctuation keep your terminal's default colour. The palette avoids white, yellow, cyan and dim text, so it reads on the default light and dark xterm themes. Colours only decorate the text: removing the ANSI codes always gives exactly the plain command, so quoting stays safe. With colours off the output is byte-for-byte the plain command.
 
-**`curl.sh`.** With the `test` fixture, the commands a test printed are also written, plain and redacted, to `curl.sh` in the test's output directory (`#!/bin/sh`, a `# <test title>` comment, one command after the other). The file is attached to the report as `curl.sh` (`text/plain`) and one line goes through the sink: `curl.sh: <relative path>`. The path is a clickable OSC 8 hyperlink only when colours are on for the console, stdout is a TTY and `CI` is not set; otherwise it is plain text. Turn the file off with `curlFormat: { file: false }`. It is written at the end of the test, passed or failed, and only if at least one curl was produced (`curl: 'on-failure'` with only 2xx responses produces none). The file follows `multiline`.
+### When the curl is coloured
 
-**Redaction.** The printed curl, `curl.sh` and its attachment use the same builder and the same redaction lists (`redactHeaders`, `redactQueryParams`, `redactBodyKeys`), so a masked value is `***` everywhere. There is no switch that writes unredacted values; fill the real ones in before replaying.
+With `curlFormat.colors: 'auto'` (the default) the curl is coloured only when **all** of these hold:
+
+1. `NO_COLOR` is not set to a non-empty value. It always wins under `'auto'`, even over a top-level `colors: true`.
+2. The process is not on CI: none of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TRAVIS`, `APPVEYOR`, `TF_BUILD`, `TEAMCITY_VERSION`, `JENKINS_URL`, `BITBUCKET_BUILD_NUMBER`, `CODEBUILD_BUILD_ID`, `DRONE` is set to a value other than `0` or `false`.
+3. The output really reaches a terminal: `process.stdout` is a TTY, or `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`), and `TERM` is not `dumb`.
+4. The resolved [`colors`](#colors) is true and the sink is the default console sink (a custom `sink` keeps the curl plain).
+
+`FORCE_COLOR` does not count. `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe, and Playwright gives a worker no other signal about the terminal of the runner. So **in a Playwright worker the curl stays plain unless you opt in**: run with `PLAYWRIGHT_FORCE_TTY=1` (you assert that the runner's terminal is a TTY), or set `curlFormat.colors: true`. A top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines.
+
+`curlFormat.colors: true` is an **explicit override**: the curl is coloured whatever `NO_COLOR`, CI, the terminal, the top-level `colors` and the sink say. Use it when you know where the output goes; ANSI codes will end up in CI logs, files or a custom sink. `curlFormat.colors: false` never colours. The `curl.sh` file and its attachment are never coloured.
+
+```sh
+PLAYWRIGHT_FORCE_TTY=1 npx playwright test   # coloured curl from the workers, on your own terminal
+```
+
+### curl.sh
+
+With the `test` fixture, the commands a test printed are also written, plain and redacted, to `curl.sh` in the test's output directory and attached to the report as `curl.sh` (`text/plain`). The file starts with:
+
+```sh
+#!/bin/sh
+# tests/users.spec.ts:42
+# redacted curl commands of this test; run with: sh curl.sh
+```
+
+The second line is the spec file, relative to the config's `rootDir` (or the project's `testDir`), and the line of the test. **The test title is not written to the file**: titles can contain data, and Playwright keeps them in the report anyway. The location has escape sequences and control characters removed.
+
+One line goes through the sink when the file is ready, and it names no path, because Playwright derives the output folder from the test title:
+
+```
+curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)
+```
+
+Turn the file off with `curlFormat: { file: false }`. It is written at the end of the test, passed or failed, and only if at least one curl was produced (`curl: 'on-failure'` with only 2xx responses produces none). The file follows `multiline`.
+
+**Redaction.** The printed curl, `curl.sh` and its attachment use the same builder and the same redaction lists (`redactHeaders`, `redactQueryParams`, `redactBodyKeys`), so a masked value is `***` everywhere. There is no switch that writes unredacted values; fill the real ones in before replaying. `redactBodyKeys` is **empty by default**: configure it for the body keys of your API (it masks JSON and form keys and multipart field names only; XML and other raw text bodies are not scrubbed). Playwright's own HTML report step titles show the full request URLs of `request.get(...)` calls; the logger cannot mask them (see [Secrets & redaction](#secrets--redaction)).
 
 ```sh
 sh curl.sh   # after replacing the *** placeholders
@@ -420,6 +455,7 @@ To use *only* your own lists, set `replaceDefaultRedaction: true` in the `apiLog
 > **Limitation: Playwright-owned artifacts are outside this logger.** Masking covers what *this logger* outputs (console block, attachment, files, events, sink). Artifacts that Playwright itself writes can contain the raw values, **even with traces off** (`trace: 'off'`):
 >
 > - **HTML report step titles.** Playwright puts action arguments into step titles, and the report keeps them: on newer versions as `Fill "<the value>"` (seen on 1.64), and on older versions some steps carry values too. Do not assume any version is clean.
+> - **Request URLs in step titles.** The steps of `request.get(...)` and the other `APIRequestContext` calls show the full request URL in Playwright's HTML report, query string included. The logger cannot mask them: keep secrets out of URLs (send them in headers or the body) or do not share the report.
 > - **`error-context.md`.** For failed tests newer Playwright versions attach a page snapshot that includes the current values of form fields (seen on 1.64).
 > - **Traces, screenshots and videos** (when enabled) hold raw action parameters and page content.
 > - The same raw values are visible to other reporters (`json`, `blob`, `junit`, custom ones) and in Playwright's own error messages and call logs.

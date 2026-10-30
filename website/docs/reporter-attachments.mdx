@@ -111,7 +111,7 @@ test.afterEach(async ({}, testInfo) => {
 
 ## The `curl.sh` attachment {#curl-sh}
 
-When `apiLog.curl` is on and a test produced curl commands, the `request` fixture attaches `curl.sh` (`text/plain`) to the report, whatever the test status, and keeps the file in the test's output directory. It holds the plain, redacted commands: no ANSI codes, `***` in place of every masked value. See [API logging › The `curl.sh` file](./api-logging.mdx#curl-file). Turn it off with `apiLog: { curlFormat: { file: false } }`.
+When `apiLog.curl` is on and a test produced curl commands, the `request` fixture attaches `curl.sh` (`text/plain`) to the report, whatever the test status, and keeps the file in the test's output directory. It holds the plain, redacted commands: no ANSI codes, `***` in place of every masked value. Its header is `#!/bin/sh`, the spec file and line of the test (relative to the config's `rootDir` or `testDir`, control characters removed) and a generic comment; **the test title is not in the file**. The console notice is `curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)` and names no path, because Playwright's output folder is derived from the test title. See [API logging › The `curl.sh` file](./api-logging.mdx#curl-file). Turn it off with `apiLog: { curlFormat: { file: false } }`.
 
 ## Reporters
 

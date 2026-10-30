@@ -1,4 +1,5 @@
 import { test } from '../../lib';
+import { TITLE_ESCAPES, TITLE_QUERY, TITLE_VALUE, VALUE_CANARY } from './curlfile-titles';
 
 const CANARY = 'PLP-CANARY-7f3a';
 
@@ -57,6 +58,22 @@ test.describe('custom sink with explicit colors', () => {
     apiLog: { curl: true, colors: true, sink: (line: string) => console.log(`SINK|${JSON.stringify(line)}`) },
   });
   test('curl file: custom sink with colors true', async ({ request }) => {
+    await send(request);
+  });
+});
+
+test.describe('titles stay out of curl.sh', () => {
+  test.use({ apiLog: { curl: true }, browserLog: { redact: { values: [VALUE_CANARY] } } });
+
+  test(TITLE_QUERY, async ({ request }) => {
+    await send(request);
+  });
+
+  test(TITLE_VALUE, async ({ request }) => {
+    await send(request);
+  });
+
+  test(TITLE_ESCAPES, async ({ request }) => {
     await send(request);
   });
 });

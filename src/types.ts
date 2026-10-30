@@ -1,3 +1,4 @@
+import { autoCurlColors, isOff } from './env';
 import { describeValue, warnOnce } from './warn';
 
 /**
@@ -8,9 +9,14 @@ import { describeValue, warnOnce } from './warn';
 export interface CurlFormatConfig {
   /**
    * Colour the printed curl command (the `curl.sh` file and attachment are never coloured).
-   * - 'auto' (default): follow the resolved `colors`, but only when the output goes to the
-   *   default console sink. With a custom `sink` the curl stays plain.
-   * - true / false: force colours on / off, whatever `colors` and the sink are.
+   * - 'auto' (default): coloured only when ALL of these hold: NO_COLOR is not set (it always
+   *   wins here), the process is not on CI, the output really reaches a terminal (stdout is a
+   *   TTY, or PLAYWRIGHT_FORCE_TTY is set), the resolved `colors` is true and the sink is the
+   *   default console one. `colors: true` alone, FORCE_COLOR and the FORCE_COLOR=1 that
+   *   Playwright gives its workers do not colour the curl in CI or when piped.
+   * - true: colours on. An explicit override: it bypasses the CI, NO_COLOR and terminal checks
+   *   and the sink check, so ANSI codes can end up in CI logs or a custom sink.
+   * - false: colours off.
    */
   colors?: boolean | 'auto';
   /**
@@ -20,8 +26,9 @@ export interface CurlFormatConfig {
   multiline?: boolean;
   /**
    * With the `test` fixture: collect the curl commands of a test (plain and redacted) into a
-   * `curl.sh` file in the test's output directory, attach it to the report and print its path
-   * (default true). Only applies while `curl` is enabled.
+   * `curl.sh` file in the test's output directory, attach it to the report and print a one-line
+   * notice (default true). The file starts with `#!/bin/sh` and the spec file and line of the
+   * test; it holds no test title. Only applies while `curl` is enabled.
    */
   file?: boolean;
 }
@@ -114,11 +121,6 @@ export type ResolvedConfig =
 type ColorEnv = Record<string, string | undefined>;
 interface MaybeTTY { isTTY?: boolean }
 
-/** True for the values the colour env vars use to mean "off". */
-function isOff(value: string | undefined): boolean {
-  return value !== undefined && (value === '0' || value.toLowerCase() === 'false');
-}
-
 /**
  * Whether colored output should be used by default. Follows the same rules as
  * Playwright's own reporters, in this order:
@@ -161,7 +163,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   enabled: true,
   colors: detectColorSupport(),
   curl: false,
-  curlFormat: { colors: detectColorSupport(), multiline: true, file: true },
+  curlFormat: { colors: detectColorSupport() && autoCurlColors(), multiline: true, file: true },
   logHeaders: true,
   logBody: true,
   maxBodyLength: 2000,
@@ -206,10 +208,7 @@ function guardSink(sink: (line: string) => void): (line: string) => void {
   };
 }
 
-/**
- * The `curlFormat` option. `autoColors` is what 'auto' resolves to: the resolved
- * `colors`, but off for a custom sink.
- */
+/** The `curlFormat` option. `autoColors` is what 'auto' resolves to (see `CurlFormatConfig.colors`). */
 function resolveCurlFormat(
     raw: unknown,
     autoColors: boolean,
@@ -327,7 +326,9 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
     }
   }
 
-  const curlFormat = resolveCurlFormat(get('curlFormat'), colors && !customSink, invalid);
+  // 'auto' also needs a terminal and no CI/NO_COLOR, which `colors` alone does not check
+  // (FORCE_COLOR makes it true for Playwright workers whose stdout is a pipe).
+  const curlFormat = resolveCurlFormat(get('curlFormat'), colors && !customSink && autoCurlColors(), invalid);
 
   let baseURL: string | undefined;
   const rawBase = get('baseURL');

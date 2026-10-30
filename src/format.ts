@@ -11,18 +11,25 @@ export interface Palette {
   bold: Colorizer;
   arrowOut: Colorizer;
   arrowIn: Colorizer;
-  /** The `curl` word of a curl command. */
+  // The curl command uses the colours below. They are chosen to read on the default
+  // (black-on-white and white-on-black) xterm palettes: no white, yellow or cyan text, and
+  // no dim, which vanishes on some terminals. Flags, quotes and punctuation stay uncoloured.
+  /** The `curl` word. */
   curl: Colorizer;
-  /** URL of a curl command. */
+  /** HTTP method after `-X`. */
+  curlMethod: (method: string) => Colorizer;
+  /** URL. */
   url: Colorizer;
-  /** Query parameter name and JSON key. */
+  /** Query parameter name and header name. */
   name: Colorizer;
-  /** Header name. */
-  header: Colorizer;
+  /** JSON key. */
+  key: Colorizer;
   /** JSON string. */
   string: Colorizer;
-  /** A masked value (`***`). */
-  warn: Colorizer;
+  /** A masked value (`***`): bold and reversed, so it stands out on any background. */
+  mask: Colorizer;
+  /** `#` notes. */
+  comment: Colorizer;
 }
 
 const identity: Colorizer = (s) => s;
@@ -41,11 +48,13 @@ export function palette(colors: boolean): Palette {
       arrowOut: identity,
       arrowIn: identity,
       curl: identity,
+      curlMethod: () => identity,
       url: identity,
       name: identity,
-      header: identity,
+      key: identity,
       string: identity,
-      warn: identity,
+      mask: identity,
+      comment: identity,
     };
   }
   return {
@@ -70,11 +79,22 @@ export function palette(colors: boolean): Palette {
     arrowOut: pc.blue,
     arrowIn: pc.blue,
     curl: pc.bold,
-    url: pc.cyan,
-    name: pc.blue,
-    header: pc.magenta,
-    string: pc.yellow,
-    warn: (s: string) => pc.bold(pc.yellow(s)),
+    curlMethod: (method: string) => {
+      switch (method.toUpperCase()) {
+        case 'GET': return pc.blue;
+        case 'POST': return pc.green;
+        case 'PUT':
+        case 'PATCH': return pc.magenta;
+        case 'DELETE': return pc.red;
+        default: return pc.bold;
+      }
+    },
+    url: pc.blue,
+    name: pc.magenta,
+    key: pc.blue,
+    string: pc.green,
+    mask: (s: string) => pc.bold(pc.inverse(s)),
+    comment: pc.gray,
   };
 }
 
