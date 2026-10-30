@@ -1,5 +1,7 @@
 import * as pw from '@playwright/test';
 import type { ApiLoggerConfig } from './types';
+import { resolveConfig } from './types';
+import { writeCurlScript } from './curlFile';
 import { wrapRequestContext } from './wrapRequestContext';
 import { BrowserLogSession, NOOP_HANDLE } from './browser/session';
 import type { BrowserLogHandle } from './browser/session';
@@ -89,13 +91,21 @@ export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtur
     await use(browser);
   }, { scope: 'worker' }],
 
-  request: async ({ request, apiLog, baseURL, extraHTTPHeaders, _plpSession }, use) => {
-    const config = {
+  request: async ({ request, apiLog, baseURL, extraHTTPHeaders, _plpSession }, use, testInfo) => {
+    // Resolved here, from the user's own sink, because teeApiLog() replaces the sink:
+    // the wrapper must not mistake it for a custom one when it picks the colours.
+    const resolved = resolveConfig({
       ...apiLog,
       baseURL: apiLog.baseURL ?? baseURL,
       extraHTTPHeaders: apiLog.extraHTTPHeaders ?? extraHTTPHeaders,
-    };
-    await use(wrapRequestContext(request, _plpSession ? _plpSession.teeApiLog(config) : config));
+    });
+    const config = _plpSession ? _plpSession.teeApiLog(resolved) : resolved;
+    const curls: string[] = [];
+    await use(wrapRequestContext(request, config, { onCurl: (plain) => curls.push(plain) }));
+    await writeCurlScript(curls, testInfo, {
+      log: config.sink,
+      consoleColors: resolved.colors && typeof apiLog.sink !== 'function',
+    });
   },
 
   browserLogger: async ({ _plpSession }, use) => {

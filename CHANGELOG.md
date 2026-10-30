@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Coloured curl output.** The curl printed to the console is coloured like the log lines: `curl` bold, the method in its log-line colour, flags/continuations/quotes dim, URL cyan with blue query parameter names, magenta header names, bold yellow `***`, and JSON bodies (when valid JSON) with blue keys, yellow strings and dim punctuation. Removing the ANSI codes always gives exactly the plain command, and with colours off the output is byte-identical to before.
+- **`curlFormat` option** (`ApiLoggerConfig`): `colors` (`true`, `false` or `'auto'`, the default), `multiline` (default `true`; `false` prints a single line with `#` notes on their own preceding lines) and `file`. Invalid values warn once and use the default. New exported types `CurlFormatConfig` and `ResolvedCurlFormat`.
+- **`curl.sh` per test** (with the `test` fixture): the plain, redacted curl commands of a test are written to `curl.sh` in the test's output directory (`#!/bin/sh`, a `# <test title>` comment), attached to the report and announced with one `curl.sh: <path>` line through the sink. The path is an OSC 8 hyperlink only when colours are on for the console, stdout is a TTY and `CI` is not set. `curlFormat: { file: false }` turns it off. Redaction is the same as for the printed curl; there is no unredacted mode.
+- `buildCurl()` accepts `colors` and `multiline` in its options (both optional; the signature is backward compatible).
+
+### Changed
+
+- With a custom `sink` and no explicit `colors`, colours now default to **off** for all apiLog lines, so ANSI codes do not reach a file sink. An explicit `colors: true` keeps them. Before, a custom sink received colours whenever the environment enabled them.
+- `curlFormat.colors: 'auto'` follows the resolved `colors` only on the default console sink; with a custom `sink` the curl is plain unless `curlFormat.colors` is `true`.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

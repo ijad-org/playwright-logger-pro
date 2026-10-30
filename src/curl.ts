@@ -1,5 +1,6 @@
 import type { RedirectHop, RequestInfo } from './types';
-import { redactHeaders, splitChars } from './format';
+import { palette, redactHeaders, splitChars } from './format';
+import type { Colorizer, Palette } from './format';
 import { multipartParts } from './multipart';
 import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
 import { redirectRulesFor } from './playwrightVersion';
@@ -11,19 +12,130 @@ export interface CurlOptions {
   redactBodyKeys?: readonly string[];
   /** Truncate the request body (and each form/field value) beyond this many characters. */
   maxBodyLength?: number;
+  /**
+   * Colour the command with ANSI codes (default false). Stripping the codes
+   * gives exactly the uncoloured command, which stays safe to paste.
+   */
+  colors?: boolean;
+  /**
+   * One option per line, joined with ` \` continuations (default true). With
+   * false the command is a single line; notes stay on their own `#` lines.
+   */
+  multiline?: boolean;
+}
+
+/** A piece of the command and how to colour it; the text is what a shell sees. */
+type Paint = (p: Palette) => Colorizer;
+interface Token { text: string; paint?: Paint }
+
+const tok = (text: string, paint?: Paint): Token => ({ text, paint });
+const DIM: Paint = (p) => p.dim;
+const WARN: Paint = (p) => p.warn;
+const URL_PAINT: Paint = (p) => p.url;
+const NAME: Paint = (p) => p.name;
+const HEADER: Paint = (p) => p.header;
+const STRING: Paint = (p) => p.string;
+const SPACE = tok(' ');
+
+function render(tokens: readonly Token[], p: Palette): string {
+  return tokens.map((t) => (t.text && t.paint ? t.paint(p)(t.text) : t.text)).join('');
+}
+
+function joinTokens(groups: readonly Token[][], separator: readonly Token[]): Token[] {
+  return groups.flatMap((group, i) => (i === 0 ? group : [...separator, ...group]));
+}
+
+/** `text` with every mask (`***`) highlighted, the rest in `paint`. */
+function withMasks(text: string, paint?: Paint): Token[] {
+  const out: Token[] = [];
+  text.split(REDACTED).forEach((part, i) => {
+    if (i > 0) out.push(tok(REDACTED, WARN));
+    if (part) out.push(tok(part, paint));
+  });
+  return out;
 }
 
 /** File a binary request body is read from when the curl is replayed. */
 const BINARY_BODY_FILE = 'request-body.bin';
 
-function shellQuote(value: string): string {
-  // Single-quote for POSIX shells, escaping embedded single quotes.
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+/**
+ * Single-quote for POSIX shells, escaping embedded single quotes. Escaping
+ * is per token, so the quoted text is the same however it is split into tokens.
+ */
+function quoted(inner: readonly Token[]): Token[] {
+  return [
+    tok("'", DIM),
+    ...inner.map((t) => ({ ...t, text: t.text.replace(/'/g, `'\\''`) })),
+    tok("'", DIM),
+  ];
+}
+
+/** `flag 'value'` */
+function option(flag: string, value: readonly Token[]): Token[] {
+  return [tok(flag, DIM), SPACE, ...quoted(value)];
+}
+
+/** `name=value` with the name and `=` coloured. */
+function pair(name: string, value: string, namePaint: Paint = NAME): Token[] {
+  return [tok(name, namePaint), tok('=', DIM), ...withMasks(value)];
+}
+
+/** An (already redacted) URL: query parameter names and the separators get their own colour. */
+function urlTokens(url: string): Token[] {
+  const hashAt = url.indexOf('#');
+  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const queryAt = beforeHash.indexOf('?');
+  const out = [tok(queryAt === -1 ? beforeHash : beforeHash.slice(0, queryAt), URL_PAINT)];
+  if (queryAt !== -1) {
+    out.push(tok('?', DIM));
+    beforeHash.slice(queryAt + 1).split('&').forEach((param, i) => {
+      if (i > 0) out.push(tok('&', DIM));
+      const eq = param.indexOf('=');
+      if (eq === -1) out.push(tok(param, NAME));
+      else out.push(...pair(param.slice(0, eq), param.slice(eq + 1)));
+    });
+  }
+  if (hashAt !== -1) out.push(tok(url.slice(hashAt), URL_PAINT));
+  return out;
+}
+
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const JSON_PIECE = /"(?:[^"\\]|\\[\s\S])*"|[{}[\],:]|[^"{}[\],:]+/g;
+const COLON_AHEAD = /\s*:/y;
+
+/** A request body; valid JSON is coloured piece by piece, anything else is left as is. */
+function bodyTokens(text: string, colors: boolean): Token[] {
+  if (!colors || !isJson(text)) return withMasks(text);
+  const out: Token[] = [];
+  for (const match of text.matchAll(JSON_PIECE)) {
+    const piece = match[0];
+    if (piece[0] === '"') {
+      COLON_AHEAD.lastIndex = match.index + piece.length;
+      out.push(...withMasks(piece, COLON_AHEAD.test(text) ? NAME : STRING));
+    } else if (piece.length === 1 && '{}[],:'.includes(piece)) {
+      out.push(tok(piece, DIM));
+    } else {
+      out.push(tok(piece));
+    }
+  }
+  return out;
 }
 
 /** Value for a curl -F `@file` / `type=` attribute, double-quoted if needed. */
 function formValue(value: string): string {
   return /[;,"\\\s]/.test(value) ? `"${value.replace(/[\\"]/g, '\\$&')}"` : value;
+}
+
+function contentTypeHeader(value: string): Token[] {
+  return [tok('Content-Type', HEADER), tok(':', DIM), tok(` ${value}`)];
 }
 
 function isValidUrl(url: string): boolean {
@@ -79,10 +191,12 @@ function buildRedirectSteps(
     redact: readonly string[],
     options: CurlOptions,
 ): string {
+  const p = palette(Boolean(options.colors));
+  const comment = (text: string): string => render([tok(text, DIM)], p);
   const out = [
-    `# the request was redirected ${hops.length - 1} time(s). Playwright's redirect rules ` +
-    'cannot be replayed by a single curl, so there is one command per step',
-    '# (cookies for the later steps come from the cookie jar and are not included)',
+    comment(`# the request was redirected ${hops.length - 1} time(s). Playwright's redirect rules ` +
+    'cannot be replayed by a single curl, so there is one command per step'),
+    comment('# (cookies for the later steps come from the cookie jar and are not included)'),
   ];
   const rules = redirectRulesFor(info.playwrightVersion);
   let headers = info.headers;
@@ -104,7 +218,7 @@ function buildRedirectSteps(
       }
     }
     const status = hop.status === undefined ? '' : ` (response: ${hop.status})`;
-    out.push(`# step ${index + 1} of ${hops.length}${status}`);
+    out.push(comment(`# step ${index + 1} of ${hops.length}${status}`));
     out.push(buildCurl({
       method, url, headers, ...body, followRedirects: false,
     }, redact, options));
@@ -130,8 +244,11 @@ export function buildCurl(
     redact: readonly string[] = [],
     options: CurlOptions = {},
 ): string {
-  if (!isValidUrl(info.url)) return '# could not build curl: invalid URL';
-  const { redactQueryParams = [], redactBodyKeys = [], maxBodyLength } = options;
+  const {
+    redactQueryParams = [], redactBodyKeys = [], maxBodyLength, colors = false, multiline = true,
+  } = options;
+  const p = palette(colors);
+  if (!isValidUrl(info.url)) return render([tok('# could not build curl: invalid URL', DIM)], p);
   const method = info.method.toUpperCase();
   const parts = multipartParts(info.multipart, redactBodyKeys);
   const hasBody = (parts !== undefined && parts.length > 0) ||
@@ -151,17 +268,17 @@ export function buildCurl(
   // A body alone would make curl send POST, so GET with a body needs -X GET.
   const impliedMethod = (method === 'GET' && !hasBody) ||
     (follow && method === 'POST' && hasBody);
-  const methodFlag = method === 'HEAD' ?
+  const methodTokens: Token[][] = method === 'HEAD' ?
     // -X HEAD makes curl wait for a response body that never comes.
-    '--head' :
-    (impliedMethod ? undefined : `-X ${method}`);
-  const head = [
-    'curl',
-    ...(methodFlag ? [methodFlag] : []),
-    ...(follow ? ['-L'] : []),
-    shellQuote(redactUrl(info.url, redactQueryParams)),
-  ].join(' ');
-  const lines: string[] = [head];
+    [[tok('--head', DIM)]] :
+    (impliedMethod ? [] : [[tok('-X', DIM), SPACE, tok(method, (pal) => pal.method(method))]]);
+  const head: Token[][] = [
+    [tok('curl', (pal) => pal.curl)],
+    ...methodTokens,
+    ...(follow ? [[tok('-L', DIM)]] : []),
+    quoted(urlTokens(redactUrl(info.url, redactQueryParams))),
+  ];
+  const lines: Token[][] = [joinTokens(head, [SPACE])];
 
   const notes: string[] = [];
   const truncated: number[] = [];
@@ -176,7 +293,7 @@ export function buildCurl(
 
   const headers = redactHeaders(info.headers ?? {}, redact);
   for (const [key, value] of Object.entries(headers)) {
-    lines.push(`-H ${shellQuote(`${key}: ${value}`)}`);
+    lines.push(option('-H', [tok(key, HEADER), tok(':', DIM), tok(' '), ...withMasks(value)]));
   }
 
   // Files whose content only existed in memory are referenced by filename;
@@ -186,40 +303,40 @@ export function buildCurl(
     for (const part of parts) {
       if (part.kind === 'field') {
         // --form-string: no @file / <file / ;type= interpretation of the value.
-        lines.push(`--form-string ${shellQuote(`${part.name}=${limit(part.value)}`)}`);
+        lines.push(option('--form-string', pair(part.name, limit(part.value))));
         continue;
       }
       const source = part.path ?? part.filename;
       if (!part.path) localFiles.push(part.filename);
-      let spec = `${part.name}=@${formValue(source)}`;
+      let spec = `@${formValue(source)}`;
       if (part.mimeType) spec += `;type=${formValue(part.mimeType)}`;
-      lines.push(`-F ${shellQuote(spec)}`);
+      lines.push(option('-F', pair(part.name, spec)));
     }
   } else if (info.form && Object.keys(info.form).length > 0) {
     for (const [key, value] of Object.entries(info.form)) {
       const safe = redactedKeys.has(key.toLowerCase()) ? REDACTED : limit(String(value));
-      lines.push(`--data-urlencode ${shellQuote(`${key}=${safe}`)}`);
+      lines.push(option('--data-urlencode', pair(key, safe)));
     }
   } else if (info.data !== undefined && info.data !== null) {
     const contentType = Object.entries(headers)
         .find(([h]) => h.toLowerCase() === 'content-type')?.[1];
     if (typeof info.data === 'object' && !Buffer.isBuffer(info.data) && contentType === undefined) {
-      lines.push(`-H ${shellQuote('Content-Type: application/json')}`);
+      lines.push(option('-H', contentTypeHeader('application/json')));
     }
     if (Buffer.isBuffer(info.data)) {
       // The bytes cannot be pasted into a shell; read them from a file
       // instead of sending a placeholder as the body.
       if (contentType === undefined) {
-        lines.push(`-H ${shellQuote('Content-Type: application/octet-stream')}`);
+        lines.push(option('-H', contentTypeHeader('application/octet-stream')));
       }
-      lines.push(`--data-binary ${shellQuote(`@${BINARY_BODY_FILE}`)}`);
+      lines.push(option('--data-binary', [tok(`@${BINARY_BODY_FILE}`)]));
       notes.push(`# binary request body (${info.data.length} bytes) is not included; ` +
         `save it as ${BINARY_BODY_FILE} before replaying`);
     } else {
       const body = typeof info.data === 'string' ?
         redactBodyString(info.data, redactBodyKeys, contentType) :
         JSON.stringify(redactBodyValue(info.data, redactBodyKeys));
-      lines.push(`--data-raw ${shellQuote(limit(body))}`);
+      lines.push(option('--data-raw', bodyTokens(limit(body), colors)));
     }
   }
 
@@ -234,5 +351,9 @@ export function buildCurl(
     notes.push(`# request body truncated to maxBodyLength (${maxBodyLength} of ` +
       `${Math.max(...truncated)} chars); the replayed body is incomplete`);
   }
-  return [...notes, lines.join(' \\\n  ')].join('\n');
+  const separator = multiline ? [SPACE, tok('\\', DIM), tok('\n  ')] : [SPACE];
+  return [
+    ...notes.map((note) => render([tok(note, DIM)], p)),
+    render(joinTokens(lines, separator), p),
+  ].join('\n');
 }

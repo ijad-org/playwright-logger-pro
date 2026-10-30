@@ -42,7 +42,7 @@ use: {
 With `replaceDefaultRedaction: true`, anything not in your lists is printed in clear text, including `Authorization` and `Cookie` headers. The switch also drops the browser log's default `redact.selectors` and `redact.keys` and its query-parameter masking.
 :::
 
-A redacted curl contains the literal text `***`. Replace it with the real value before replaying.
+A redacted curl contains the literal text `***`. Replace it with the real value before replaying. The `curl.sh` file and its report attachment are built by the same code with the same lists, are never coloured, and there is no setting that writes unredacted values.
 
 ## Browser logging
 

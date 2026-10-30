@@ -41,8 +41,9 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a transparent pass-through. |
-| `colors` | `boolean` | auto | `true`/`false` force ANSI colours on/off (`true` wins over `NO_COLOR`). Auto: see [Environment variables](#environment-variables). |
+| `colors` | `boolean` | auto | `true`/`false` force ANSI colours on/off (`true` wins over `NO_COLOR`). Auto: see [Environment variables](#environment-variables). With a custom `sink` and no explicit `colors`, auto means **off**, so ANSI codes do not reach a file. |
 | `curl` | `boolean \| 'on-failure'` | `false` | Print the equivalent curl: never / for every request / only when the status is not 2xx or no response arrived. Other values warn and use `false`. |
+| `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl is printed and saved: colours, single-line output and the `curl.sh` file. See [`curlFormat`](#curlformat). |
 | `logHeaders` | `boolean` | `true` | Log request and response headers. |
 | `logBody` | `boolean` | `true` | Log request and response bodies. |
 | `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters. A number ≥ 0; `Infinity` disables truncation. Also applies to the curl body. |
@@ -53,6 +54,18 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | `sink` | `(line: string) => void` | `console.log` | Where log lines go. A throwing sink warns once and falls back to `console.log`. |
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs and the original URL of redirected requests. The fixture fills it in; pass it yourself with `wrapRequestContext()`. |
 | `extraHTTPHeaders` | `Record<string, string>` | fixture: `use.extraHTTPHeaders` | Headers the context sends with every request, shown in logged headers and curl. The fixture fills it in; with `wrapRequestContext()` pass the headers you gave `newContext()`. |
+
+### `curlFormat` {#curlformat}
+
+Presentation of the curl command. Only the printed command changes; the redaction is the same everywhere. An invalid value warns once and uses the default.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `colors` | `boolean \| 'auto'` | `'auto'` | `true`/`false` force colours on/off. `'auto'` follows the resolved `colors`, but only for the default console sink: with a custom `sink` the curl stays plain unless you set `curlFormat.colors: true`. `NO_COLOR` therefore turns the curl colours off under `'auto'`. |
+| `multiline` | `boolean` | `true` | `false` prints the command on a single line, options joined by single spaces. Notes and redirect step comments stay on their own `#` lines above it. |
+| `file` | `boolean` | `true` | With the `test` fixture, write the test's curls to `curl.sh`, attach it and print its path. Only applies while `curl` is enabled. |
+
+See [API logging › curl output](./api-logging.mdx#curl-output) for the colours and the `curl.sh` file.
 
 ## browserLog options {#browserlog-options}
 
@@ -110,6 +123,8 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | `redactQueryParams` | `readonly string[]` | none | Query parameter names whose values are masked in the URL. |
 | `redactBodyKeys` | `readonly string[]` | none | JSON/form body keys and multipart field names whose values are masked. |
 | `maxBodyLength` | `number` | none | Truncate the request body (and each form/field value) beyond this many characters. |
+| `colors` | `boolean` | `false` | Colour the command with ANSI codes. Removing the codes gives exactly the uncoloured command. |
+| `multiline` | `boolean` | `true` | One option per line with `\` continuations; `false` gives a single line. |
 
 ## Fixtures and exports {#fixtures-and-exports}
 

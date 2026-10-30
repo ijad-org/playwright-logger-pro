@@ -342,8 +342,9 @@ export class BrowserLogSession implements ActionSink {
       ...apiLog,
       sink: (line: string) => {
         try {
+          // Colours and OSC 8 hyperlinks (the curl.sh notice).
           // eslint-disable-next-line no-control-regex
-          this.addApi(String(line).replace(/\x1b\[[0-9;]*m/g, ''));
+          this.addApi(String(line).replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\/g, ''));
         } catch {
           // never fail the request for logging
         }

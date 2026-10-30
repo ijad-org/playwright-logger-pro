@@ -4,6 +4,31 @@ import { describeValue, warnOnce } from './warn';
  * Configuration for the API logger. All fields optional; see DEFAULT_CONFIG
  * for the effective defaults.
  */
+/** How the curl command is printed and saved; see `ApiLoggerConfig.curlFormat`. */
+export interface CurlFormatConfig {
+  /**
+   * Colour the printed curl command (the `curl.sh` file and attachment are never coloured).
+   * - 'auto' (default): follow the resolved `colors`, but only when the output goes to the
+   *   default console sink. With a custom `sink` the curl stays plain.
+   * - true / false: force colours on / off, whatever `colors` and the sink are.
+   */
+  colors?: boolean | 'auto';
+  /**
+   * One option per line with `\` continuations (default true). false prints the command on
+   * a single line, options joined by single spaces; `#` notes stay on their own preceding lines.
+   */
+  multiline?: boolean;
+  /**
+   * With the `test` fixture: collect the curl commands of a test (plain and redacted) into a
+   * `curl.sh` file in the test's output directory, attach it to the report and print its path
+   * (default true). Only applies while `curl` is enabled.
+   */
+  file?: boolean;
+}
+
+/** `CurlFormatConfig` with every default filled in and `colors` resolved to a boolean. */
+export type ResolvedCurlFormat = Required<Omit<CurlFormatConfig, 'colors'>> & { colors: boolean };
+
 export interface ApiLoggerConfig {
   /** Master switch. Set false to make the wrapper a transparent pass-through. */
   enabled?: boolean;
@@ -11,7 +36,8 @@ export interface ApiLoggerConfig {
    * ANSI colors in output. `true`/`false` force colors on/off (`true` wins
    * over NO_COLOR). Defaults to auto-detection from NO_COLOR, FORCE_COLOR,
    * DEBUG_COLORS, PLAYWRIGHT_FORCE_TTY and whether stdout/stderr is a TTY;
-   * see detectColorSupport().
+   * see detectColorSupport(). With a custom `sink` and no explicit `colors`, colours
+   * default to off so ANSI codes do not end up in a file; set `colors: true` to keep them.
    */
   colors?: boolean;
   /**
@@ -22,6 +48,12 @@ export interface ApiLoggerConfig {
    * Any other value is ignored with a console warning (default: false).
    */
   curl?: boolean | 'on-failure';
+  /**
+   * Presentation of the curl command: colours, single-line output and the `curl.sh` file.
+   * Only the printed command changes; the redaction is the same everywhere. An invalid
+   * value is ignored with a console warning.
+   */
+  curlFormat?: CurlFormatConfig;
   /** Log request/response headers. */
   logHeaders?: boolean;
   /** Log request/response bodies. */
@@ -75,7 +107,9 @@ export interface ApiLoggerConfig {
 
 type OptionalKeys = 'baseURL' | 'extraHTTPHeaders';
 export type ResolvedConfig =
-  Required<Omit<ApiLoggerConfig, OptionalKeys>> & Pick<ApiLoggerConfig, OptionalKeys>;
+  Required<Omit<ApiLoggerConfig, OptionalKeys | 'curlFormat'>> &
+  Pick<ApiLoggerConfig, OptionalKeys> &
+  { curlFormat: ResolvedCurlFormat };
 
 type ColorEnv = Record<string, string | undefined>;
 interface MaybeTTY { isTTY?: boolean }
@@ -127,6 +161,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   enabled: true,
   colors: detectColorSupport(),
   curl: false,
+  curlFormat: { colors: detectColorSupport(), multiline: true, file: true },
   logHeaders: true,
   logBody: true,
   maxBodyLength: 2000,
@@ -150,8 +185,10 @@ export function mergeNames(...lists: Array<readonly string[]>): string[] {
   return out;
 }
 
+const KNOWN_CURL_FORMAT_OPTIONS = new Set(['colors', 'multiline', 'file']);
+
 const KNOWN_OPTIONS = new Set([
-  'enabled', 'colors', 'curl', 'logHeaders', 'logBody', 'maxBodyLength', 'redactHeaders',
+  'enabled', 'colors', 'curl', 'curlFormat', 'logHeaders', 'logBody', 'maxBodyLength', 'redactHeaders',
   'redactQueryParams', 'redactBodyKeys', 'replaceDefaultRedaction', 'sink', 'baseURL',
   'extraHTTPHeaders',
 ]);
@@ -167,6 +204,38 @@ function guardSink(sink: (line: string) => void): (line: string) => void {
       console.log(line);
     }
   };
+}
+
+/**
+ * The `curlFormat` option. `autoColors` is what 'auto' resolves to: the resolved
+ * `colors`, but off for a custom sink.
+ */
+function resolveCurlFormat(
+    raw: unknown,
+    autoColors: boolean,
+    invalid: (key: string, expected: string, value: unknown, fallback: string) => void,
+): ResolvedCurlFormat {
+  const out: ResolvedCurlFormat = { colors: autoColors, multiline: true, file: true };
+  if (raw === undefined) return out;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    invalid('curlFormat', 'an object', raw, 'the defaults');
+    return out;
+  }
+  const input = raw as Record<string, unknown>;
+  for (const key of Object.keys(input)) {
+    if (!KNOWN_CURL_FORMAT_OPTIONS.has(key)) warnOnce(`unknown option "curlFormat.${key}" ignored`);
+  }
+  const colors = input.colors;
+  if (colors === true || colors === false) out.colors = colors;
+  else if (colors !== undefined && colors !== 'auto') {
+    invalid('curlFormat.colors', "true, false or 'auto'", colors, "'auto'");
+  }
+  for (const key of ['multiline', 'file'] as const) {
+    const value = input[key];
+    if (typeof value === 'boolean') out[key] = value;
+    else if (value !== undefined) invalid(`curlFormat.${key}`, 'true or false', value, 'true');
+  }
+  return out;
 }
 
 /**
@@ -234,18 +303,21 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
   }
 
   let sink = DEFAULT_CONFIG.sink;
+  let customSink = false;
   const rawSink = get('sink');
   if (rawSink !== undefined) {
     if (typeof rawSink === 'function') {
       sink = guardSink(rawSink as (line: string) => void);
+      customSink = true;
     } else {
       invalid('sink', 'a function', rawSink, 'console.log');
     }
   }
 
   // Colors are detected per call (not only at module load) so the environment
-  // the logger actually runs in is honoured.
-  let colors = detectColorSupport();
+  // the logger actually runs in is honoured. A custom sink may write to a file:
+  // unless colors were asked for explicitly, keep ANSI codes out of it.
+  let colors = detectColorSupport() && !customSink;
   const rawColors = get('colors');
   if (rawColors !== undefined) {
     if (typeof rawColors === 'boolean') {
@@ -254,6 +326,8 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
       invalid('colors', 'true or false', rawColors, 'auto-detection');
     }
   }
+
+  const curlFormat = resolveCurlFormat(get('curlFormat'), colors && !customSink, invalid);
 
   let baseURL: string | undefined;
   const rawBase = get('baseURL');
@@ -274,6 +348,7 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
     enabled: bool('enabled', DEFAULT_CONFIG.enabled),
     colors,
     curl,
+    curlFormat,
     logHeaders: bool('logHeaders', DEFAULT_CONFIG.logHeaders),
     logBody: bool('logBody', DEFAULT_CONFIG.logBody),
     maxBodyLength,

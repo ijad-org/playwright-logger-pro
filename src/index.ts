@@ -13,7 +13,14 @@ export {
   truncateBody,
   stringifyBody,
 } from './format';
-export type { ApiLoggerConfig, RedirectHop, RequestInfo, ResolvedConfig } from './types';
+export type {
+  ApiLoggerConfig,
+  CurlFormatConfig,
+  RedirectHop,
+  RequestInfo,
+  ResolvedConfig,
+  ResolvedCurlFormat,
+} from './types';
 export {
   DEFAULT_CONFIG,
   DEFAULT_REDACT_BODY_KEYS,

@@ -269,8 +269,9 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a no-op pass-through. |
-| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR`). Auto: see [Colors](#colors). |
+| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR`). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
 | `curl` | `boolean \| 'on-failure'` | `false` | Print equivalent curl: never / always / only when status isn't 2xx. |
+| `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl looks and is saved: ANSI colours (`true`, `false` or `'auto'`), one option per line or a single line, and the `curl.sh` file. See [curl output](#curl-output). |
 | `logHeaders` | `boolean` | `true` | Log request/response headers. |
 | `logBody` | `boolean` | `true` | Log request/response bodies. |
 | `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters (a number >= 0; `Infinity` disables truncation). Also applies to the curl body, which then starts with a `# request body truncated…` comment. |
@@ -278,7 +279,7 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | `redactQueryParams` | `string[]` | `[]` (+ the defaults: `api_key, apikey, token, access_token, password, secret`) | **Extra** query parameter names masked with `***` in logged URLs **and** curl output. Merged with the defaults. |
 | `redactBodyKeys` | `string[]` | `[]` (no defaults) | **Extra** JSON/form body keys (and multipart field names) masked with `***` in logged request/response bodies **and** curl output. Merged with the (empty) defaults. |
 | `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only the lists you pass are used. Dangerous, see Recipes. |
-| `sink` | `(line: string) => void` | `console.log` | Redirect output (file, allure attachment, …). |
+| `sink` | `(line: string) => void` | `console.log` | Redirect output (file, allure attachment, …). With a custom `sink` and no explicit `colors`, colors default to **off**, so ANSI codes do not end up in a file. |
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs. The fixture fills it in; pass it in Option B to get absolute URLs in error lines and their curl. |
 | `extraHTTPHeaders` | `Record<string, string>` | fixture: `use.extraHTTPHeaders` | Headers the context sends with every request. They are shown in logged headers and the curl. The fixture fills it in; in Option B, pass the same headers you gave `newContext()`. |
 
@@ -299,6 +300,8 @@ If your runner or CI does not set `FORCE_COLOR` for the workers and the output i
 use: { apiLog: { colors: true } }
 ```
 
+**Custom `sink`.** When you pass a `sink` and do not set `colors`, colors default to **off** for every line (the sink may write to a file, and ANSI codes in a file are noise). An explicit `colors: true` keeps them, for a sink that feeds a terminal or a CI log that renders them. The curl has its own rule, see [curl output](#curl-output).
+
 > **Note:** `colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), Playwright strips every ANSI code from the test stdout it forwards, so the console shows no colors even with `colors: true`. Run in a terminal, or send the lines to a `sink` (a file, an attachment): the `sink` receives them with the colors intact.
 
 Some things to know about the output:
@@ -309,11 +312,35 @@ Some things to know about the output:
 - **Binary request bodies** (a `Buffer` as `data`) are logged as `<Buffer N bytes>`.
 - **Binary responses.** Responses with a non-text content type are logged as `<binary N bytes (type)>`. Control characters in text bodies (such as terminal escape sequences) are escaped, for example `\x1b`.
 
+## curl output
+
+With `curl: true` (or `'on-failure'`) every request is followed by a command you can paste into a POSIX shell. `curlFormat` controls how it is printed:
+
+```ts
+use: { apiLog: { curl: true, curlFormat: { colors: 'auto', multiline: true, file: true } } }
+```
+
+| `curlFormat` option | Default | Effect |
+| --- | --- | --- |
+| `colors` | `'auto'` | `true` / `false` force colours on / off. `'auto'` follows the resolved [`colors`](#colors), **but only on the default console sink**: with a custom `sink` the curl stays plain unless you set `curlFormat.colors: true`. |
+| `multiline` | `true` | `false` prints the command on one line, options joined by single spaces. Comments (`# …` notes, redirect steps) stay on their own lines above the command. |
+| `file` | `true` | With the `test` fixture, collect the test's curls into a `curl.sh` file, attach it and print its path. Only applies while `curl` is on. |
+
+**Colours.** `curl` is bold; the method has the colour of the log lines (GET cyan, POST green, PUT yellow, PATCH magenta, DELETE red); flags (`-X`, `-H`, `--data-raw`, …), the `\` continuations and the quotes around values are dim; the URL is cyan with blue query parameter names and dim `?` `&` `=`; header names are magenta and the `:` dim; a masked `***` is bold yellow; a JSON body (only when it is valid JSON) gets blue keys, yellow strings and dim punctuation; `#` comment lines are dim. Colours only decorate the text: removing the ANSI codes always gives exactly the plain command, so quoting stays safe. With colours off the output is byte-for-byte the plain command.
+
+**`curl.sh`.** With the `test` fixture, the commands a test printed are also written, plain and redacted, to `curl.sh` in the test's output directory (`#!/bin/sh`, a `# <test title>` comment, one command after the other). The file is attached to the report as `curl.sh` (`text/plain`) and one line goes through the sink: `curl.sh: <relative path>`. The path is a clickable OSC 8 hyperlink only when colours are on for the console, stdout is a TTY and `CI` is not set; otherwise it is plain text. Turn the file off with `curlFormat: { file: false }`. It is written at the end of the test, passed or failed, and only if at least one curl was produced (`curl: 'on-failure'` with only 2xx responses produces none). The file follows `multiline`.
+
+**Redaction.** The printed curl, `curl.sh` and its attachment use the same builder and the same redaction lists (`redactHeaders`, `redactQueryParams`, `redactBodyKeys`), so a masked value is `***` everywhere. There is no switch that writes unredacted values; fill the real ones in before replaying.
+
+```sh
+sh curl.sh   # after replacing the *** placeholders
+```
+
 ## curl limitations
 
 The curl is meant to be pasted into a terminal to replay the request. Keep in mind:
 
-- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh`, and lines are continued with `\`. The command will not work as-is in PowerShell or `cmd.exe`.
+- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh`, and lines are continued with `\` (not with `curlFormat: { multiline: false }`). The command will not work as-is in PowerShell or `cmd.exe`.
 - **Redacted values are sent literally.** A masked header, query parameter or body key is sent as the text `***`. Put the real value back before replaying.
 - **Truncated bodies are incomplete.** When the request body is longer than `maxBodyLength`, the curl body is cut too, and the command starts with a `# request body truncated…` comment. Raise `maxBodyLength` to get a body that replays in full.
 - **Binary bodies are read from a file.** A `Buffer` body cannot be pasted into a shell, so the curl sends `--data-binary '@request-body.bin'` and starts with a `# binary request body (N bytes) is not included…` comment. Save the bytes as `request-body.bin` in the current directory first.

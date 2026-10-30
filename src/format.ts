@@ -2,15 +2,27 @@ import { createColors } from 'picocolors';
 import type { ResolvedConfig } from './types';
 import { redactUrl } from './redact';
 
-type Colorizer = (s: string) => string;
+export type Colorizer = (s: string) => string;
 
-interface Palette {
+export interface Palette {
   method: (method: string) => Colorizer;
   status: (status: number) => Colorizer;
   dim: Colorizer;
   bold: Colorizer;
   arrowOut: Colorizer;
   arrowIn: Colorizer;
+  /** The `curl` word of a curl command. */
+  curl: Colorizer;
+  /** URL of a curl command. */
+  url: Colorizer;
+  /** Query parameter name and JSON key. */
+  name: Colorizer;
+  /** Header name. */
+  header: Colorizer;
+  /** JSON string. */
+  string: Colorizer;
+  /** A masked value (`***`). */
+  warn: Colorizer;
 }
 
 const identity: Colorizer = (s) => s;
@@ -19,7 +31,7 @@ const identity: Colorizer = (s) => s;
 // over picocolors' own env detection (NO_COLOR, non-TTY, ...).
 const pc = createColors(true);
 
-function palette(colors: boolean): Palette {
+export function palette(colors: boolean): Palette {
   if (!colors) {
     return {
       method: () => identity,
@@ -28,6 +40,12 @@ function palette(colors: boolean): Palette {
       bold: identity,
       arrowOut: identity,
       arrowIn: identity,
+      curl: identity,
+      url: identity,
+      name: identity,
+      header: identity,
+      string: identity,
+      warn: identity,
     };
   }
   return {
@@ -51,6 +69,12 @@ function palette(colors: boolean): Palette {
     bold: pc.bold,
     arrowOut: pc.blue,
     arrowIn: pc.blue,
+    curl: pc.bold,
+    url: pc.cyan,
+    name: pc.blue,
+    header: pc.magenta,
+    string: pc.yellow,
+    warn: (s: string) => pc.bold(pc.yellow(s)),
   };
 }
 

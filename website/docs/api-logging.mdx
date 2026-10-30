@@ -151,8 +151,39 @@ What the curl reproduces:
 - **Binary bodies** as `--data-binary '@request-body.bin'` with a comment telling you to save the bytes to that file first.
 - `maxBodyLength` also applies to the curl body; a truncated body starts the command with a `# request body truncated` comment.
 
+### Colours and single-line output {#curl-colours}
+
+On the console the curl is coloured like the log lines. `curl` is bold; the method has its log-line colour (GET cyan, POST green, PUT yellow, PATCH magenta, DELETE red); flags (`-X`, `-H`, `--data-raw`, `-F`, `--form-string`, `--data-urlencode`, `--data-binary`, `-L`, `--head`), the `\` continuations and the quotes around values are dim; the URL is cyan with blue query parameter names and dim `?`, `&`, `=`; header names are magenta and the `:` dim; a masked `***` is bold yellow; a JSON body gets blue keys, yellow strings and dim punctuation (only when the body is valid JSON, anything else stays uncoloured); `#` comment lines are dim.
+
+The colours only decorate the text. Remove the ANSI codes and you get exactly the plain command, so what you copy from a terminal that strips them is safe to paste. With colours off the output is the plain command, byte for byte.
+
+```ts
+use: {
+  apiLog: {
+    curl: true,
+    curlFormat: {
+      colors: 'auto',   // true | false | 'auto' (default)
+      multiline: false, // one line instead of one option per line
+    },
+  },
+}
+```
+
+- `colors: 'auto'` follows the resolved [`colors`](./configuration.mdx#environment-variables), so `NO_COLOR` turns the curl colours off too. It applies **only to the default console sink**: with a custom `sink` the curl is plain unless `curlFormat.colors` is `true`.
+- `multiline: false` joins the options with single spaces. `#` notes (a truncated body, a binary body, the steps of a redirect chain) stay on their own lines above the command, each starting with `#`.
+
+### The `curl.sh` file {#curl-file}
+
+With the `test` fixture, the curls a test printed are also collected in a script. When the test ends (passed or failed) and at least one curl was produced, the fixture:
+
+1. writes `curl.sh` to the test's output directory: a `#!/bin/sh` line, a `# <test title>` comment, then the commands one after the other;
+2. attaches it to the report as `curl.sh` (`text/plain`);
+3. prints one line through the `sink`: `curl.sh: <relative path>`. The path is a clickable terminal hyperlink (OSC 8) only when colours are on for the console, stdout is a TTY and `CI` is not set; otherwise it is plain text.
+
+The script is **never coloured** and uses the same builder and the same redaction lists as the printed curl, so masked values are `***` in the file and in the attachment. There is no setting that writes unredacted values: put the real values back before you run it with `sh curl.sh`. The file follows `multiline`. Turn it off with `curlFormat: { file: false }`; it does nothing while `curl` is `false`, and with `curl: 'on-failure'` it only exists if a request failed.
+
 :::warning curl limitations
-- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh` (also Git Bash and WSL), and lines continue with `\`. The command does not work as-is in PowerShell or `cmd.exe`.
+- **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh` (also Git Bash and WSL), and lines continue with `\` (unless `curlFormat.multiline` is `false`). The command does not work as-is in PowerShell or `cmd.exe`.
 - **Redacted values are sent literally** as `***`. Put the real value back before replaying.
 - Settings that are not part of the request, such as `httpCredentials`, proxy, client certificates and `ignoreHTTPSErrors`, are not in the curl.
 - An unparsable URL gives `# could not build curl: invalid URL`.
@@ -178,6 +209,8 @@ Custom lists are **added** to the defaults, never replace them. See [Redaction &
 ## Colours
 
 With `colors` unset, the logger decides like Playwright's reporters, in this order: off for a non-empty `NO_COLOR` or `FORCE_COLOR=0`/`false`; on for any other `FORCE_COLOR` or `DEBUG_COLORS`; on for `PLAYWRIGHT_FORCE_TTY`; on when stdout or stderr is a TTY (unless `TERM=dumb`). `colors: true` or `false` always wins, including over `NO_COLOR`. See [Configuration](./configuration.mdx#environment-variables).
+
+With a custom `sink` and no explicit `colors`, colours default to **off** for every line, so ANSI codes do not end up in a file. Set `colors: true` to keep them (for example when the sink feeds a CI log that renders colours). The curl has its own switch, [`curlFormat.colors`](#curl-colours).
 
 ## Redirect the output
 
