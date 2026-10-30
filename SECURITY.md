@@ -20,7 +20,6 @@ Only the latest release receives fixes.
 
 ## Release and publishing policy
 
-- npm publishing never happens from GitHub. No `NPM_TOKEN` secret and no npm trusted publisher (OIDC) may be added to this repository or its environments, and no workflow may publish to npm.
-- A `vX.Y.Z` tag push only verifies and packs the release and creates a **draft** GitHub release for review.
-- The maintainer publishes locally, from a clean checkout of the tag, with `npm publish --auth-type=web` (npm web 2FA approval each time), and only after LQA gives GO and Abdul explicitly says yes.
-- If you find an npm publish token or a publish workflow in this repository, report it as described above.
+- npm releases are published from GitHub Actions by npm trusted publishing (OIDC) with provenance, in the `publish` job of the `Release` workflow only. No `NPM_TOKEN` or other npm secret may be added to this repository or its environments, and `id-token: write` is granted to that job only.
+- A `vX.Y.Z` tag push from a commit on `main` verifies and packs the release, creates a draft GitHub release, publishes to npm and then publishes the GitHub release. Anyone who can push a `v*` tag can publish, so tag creation should be restricted to maintainers.
+- If you find an npm publish token, or a publish path other than the `Release` workflow, in this repository, report it as described above.

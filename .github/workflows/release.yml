@@ -1,17 +1,18 @@
 name: Release
 
-# Nothing in this workflow publishes to npm. There is no NPM_TOKEN, no npm trusted publisher
-# (OIDC) and no publish job, and none may be added.
-#
-#   - Push a tag v<version> from a commit on main whose package.json version matches the tag
-#     (v0.2.0, or v0.2.0-rc.1 for a release candidate):
-#       * verify: lint, type-check, tests, build, pack, package checks; the tarball is uploaded as
-#         an artifact of the run.
-#       * the release job creates a DRAFT GitHub release with the tarball attached (a draft
-#         pre-release when the version contains "-").
-#   - The maintainer reviews the draft. After LQA gives GO and Abdul says yes, the maintainer
-#     publishes locally from a clean checkout of the tag with `npm publish --auth-type=web`
-#     (npm web 2FA approval each time), then publishes the draft. See CONTRIBUTING.md ("Releasing").
+# Push a tag v<version> from a commit on main whose package.json version matches the tag
+# (v0.2.0, or v0.2.0-rc.1 for a release candidate):
+#   - verify: tag/package.json/main/CHANGELOG checks, lint, type-check, tests, build, pack,
+#     package checks; the tarball is uploaded as an artifact of the run.
+#   - github-release: creates a DRAFT GitHub release with the tarball attached (a draft
+#     pre-release when the version contains "-").
+#   - publish: downloads the verified tarball, checks it is byte-identical to the asset on the
+#     draft, publishes it to npm with npm trusted publishing (GitHub Actions OIDC, with provenance;
+#     "next" dist-tag for pre-releases) and then publishes the GitHub release (Latest for stable
+#     versions). If only the publish job fails, re-run that job: an npm version that is already
+#     published is skipped.
+# There is no NPM_TOKEN and no npm secret. `id-token: write` is granted to the publish job only.
+# Anyone who can push a v* tag can publish; see CONTRIBUTING.md ("Releasing").
 on:
   push:
     tags: ['v*.*.*']
@@ -118,7 +119,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release
-      # A draft is only visible to maintainers; the maintainer publishes it after the npm release.
+      # A draft is only visible to maintainers; the publish job publishes it after the npm release.
       - name: gh release create --draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,3 +129,109 @@ jobs:
           args=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$RELEASE_TAG" --notes-file release-notes.md)
           if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
           gh release create "$RELEASE_TAG" playwright-logger-pro-*.tgz "${args[@]}"
+
+  publish:
+    name: publish to npm and publish the GitHub Release
+    needs: [verify, github-release]
+    runs-on: ubuntu-latest
+    # The only job with id-token: write (npm trusted publishing). contents: write is for
+    # `gh release edit`. No environment, no secrets.
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1.
+      - name: Update npm and check its version
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          NPM_VERSION=$(npm --version)
+          echo "npm $NPM_VERSION"
+          if ! printf '%s\n%s\n' 11.5.1 "$NPM_VERSION" | sort -V -C; then
+            echo "::error::npm $NPM_VERSION is older than 11.5.1 (required for trusted publishing)"
+            exit 1
+          fi
+
+      # The exact tarball that `verify` built and checked.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: verified
+
+      - name: The verified tarball is the asset attached to the draft release
+        id: tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          TARBALL="verified/playwright-logger-pro-${VERSION}.tgz"
+          test -f "$TARBALL"
+          mkdir draft-asset
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'playwright-logger-pro-*.tgz' --dir draft-asset
+          test "$(ls draft-asset | wc -l)" -eq 1
+          test -f "draft-asset/playwright-logger-pro-${VERSION}.tgz"
+          A=$(sha256sum "$TARBALL" | cut -d' ' -f1)
+          B=$(sha256sum "draft-asset/playwright-logger-pro-${VERSION}.tgz" | cut -d' ' -f1)
+          echo "artifact:      $A"
+          echo "draft release: $B"
+          if [ "$A" != "$B" ]; then
+            echo "::error::The tarball artifact differs from the asset attached to the draft release"
+            exit 1
+          fi
+          # The package inside is the one this tag is for.
+          NAME=$(tar -xOzf "$TARBALL" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).name")
+          PKG_VERSION=$(tar -xOzf "$TARBALL" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::error::The tarball contains version $PKG_VERSION, expected $VERSION"
+            exit 1
+          fi
+          echo "path=./$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Already on npm?
+        id: exists
+        env:
+          NAME: ${{ steps.tarball.outputs.name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          if FOUND=$(npm view "${NAME}@${VERSION}" version 2>npm-view.err); then
+            if [ "$FOUND" = "$VERSION" ]; then
+              echo "::notice::${NAME}@${VERSION} is already on npm; skipping npm publish and publishing the GitHub release"
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          elif ! grep -q E404 npm-view.err; then
+            cat npm-view.err
+            echo "::error::Could not look up ${NAME}@${VERSION} on npm"
+            exit 1
+          fi
+          echo "published=false" >> "$GITHUB_OUTPUT"
+
+      - name: npm publish (trusted publishing, provenance)
+        if: steps.exists.outputs.published != 'true'
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          TARBALL: ${{ steps.tarball.outputs.path }}
+        run: |
+          set -euo pipefail
+          args=(--provenance --access public)
+          if [ "$PRERELEASE" = true ]; then args+=(--tag next); fi
+          npm publish "$TARBALL" "${args[@]}"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=(--repo "$GITHUB_REPOSITORY" --draft=false)
+          # A pre-release stays a pre-release and is never marked Latest.
+          if [ "$PRERELEASE" != true ]; then args+=(--latest); fi
+          gh release edit "$RELEASE_TAG" "${args[@]}"

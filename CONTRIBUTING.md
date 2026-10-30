@@ -39,13 +39,29 @@ Every option in `website/docs/configuration.mdx` is checked against the library 
 
 ## Releasing
 
-Maintainers only. **Nothing is ever published to npm from GitHub.** Do not add an `NPM_TOKEN` secret (to the repository or to any environment) or an npm trusted publisher (OIDC) for this repository, and do not add a publish job or a `workflow_dispatch` trigger to the `Release` workflow.
+Maintainers only. A `vX.Y.Z` tag push verifies, packs and publishes to npm (with provenance) through [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub Actions OIDC). There is no `NPM_TOKEN` secret and no npm secret anywhere; do not add one. `id-token: write` is granted to the `publish` job of the `Release` workflow only.
 
-1. In a release PR, set the version in `package.json` and add the `## <version>` section to `CHANGELOG.md`. Merge it to `main`.
-2. Push the tag `vX.Y.Z` from that commit. The `Release` workflow verifies it (lint, type-check, tests, build, pack, package checks), uploads the tarball as an artifact and creates a **draft** GitHub release with the tarball attached (a draft pre-release for a tag like `v0.2.0-rc.1`). That is all a tag push does.
-3. Review the draft release. Publishing to npm needs LQA's GO and Abdul's explicit yes.
-4. The maintainer publishes locally, from a clean checkout of the tag, with `npm publish --auth-type=web`. npm asks for web 2FA approval each time.
-5. Publish the draft GitHub release.
+1. In a release PR, set the version in `package.json` and add the `## <version>` section to `CHANGELOG.md` (`## 0.4.0` or `## [0.4.0] - 2026-01-12`). Merge it to `main`.
+2. From that commit on `main`, push an annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. A pre-release uses a `-` suffix, for example `v0.4.0-rc.1`.
+3. The `Release` workflow then runs without further input:
+   - `verify`: the tag must match the `package.json` version, the commit must be on `main` and `CHANGELOG.md` must have the section (a pre-release may omit it). Then lint, type-check, tests, build, smoke tests, package checks and `pnpm pack`. The tarball is uploaded as a run artifact.
+   - `github-release`: creates a **draft** GitHub release with the tarball attached.
+   - `publish`: downloads the verified tarball, checks its SHA-256 against the asset on the draft release, runs `npm publish --provenance --access public` and then publishes the GitHub release, marked **Latest**. A pre-release (version contains `-`) is published to npm with `--tag next` and stays a pre-release, never Latest. If that version is already on npm, the npm step is skipped with a notice and the release is still published, so a failed run can be repaired by re-running the `publish` job.
+
+**Anyone who can push a `v*` tag to this repository can publish a release to npm.** There is no manual approval step and no GitHub environment. Restrict tag creation (for example with a tag ruleset) to the people who may release.
+
+### One-time trusted publisher setup
+
+On npmjs.com, open the package's **Settings > Trusted publisher** and choose GitHub Actions with:
+
+| Field | Value |
+| --- | --- |
+| Organization or user | `ijad-org` |
+| Repository | `playwright-logger-pro` |
+| Workflow filename | `release.yml` |
+| Environment name | leave blank |
+
+These must match the workflow exactly, and the `repository` field in `package.json` must point to the same GitHub repository (npm checks it for provenance). Trusted publishing needs npm 11.5.1 or newer; the workflow installs it.
 
 ## Reporting security issues
 
