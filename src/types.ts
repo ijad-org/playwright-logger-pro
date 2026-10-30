@@ -305,6 +305,18 @@ export interface RequestInfo {
    * included. With it, redirected requests are replayed one curl per step.
    */
   redirects?: RedirectHop[];
+  /**
+   * `headers.Cookie` was added from the context's cookie jar rather than set
+   * by the caller. Playwright re-reads the jar for every redirect step, so
+   * the step curls never carry it over.
+   */
+  cookieFromJar?: boolean;
+  /**
+   * Version of the running Playwright ("1.45.0"). It decides which headers a
+   * redirect forwards (see `redirectRulesFor`); without it the rules of the
+   * newest Playwright are used.
+   */
+  playwrightVersion?: string;
 }
 
 /** One request Playwright sent on the way to the final response. */
