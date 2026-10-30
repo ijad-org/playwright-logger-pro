@@ -169,22 +169,6 @@
   }
 }
 
-/* ---- Announcement bar (preview) ----
-   The theme sets inline colours from themeConfig, so override them here to follow the colour mode. */
-.theme-announcement-bar {
-  background-color: var(--ifm-color-primary-contrast-background) !important;
-  color: var(--ifm-color-primary-contrast-foreground) !important;
-  border-bottom: 1px solid var(--ifm-toc-border-color);
-}
-
-.theme-announcement-bar [class*='content'] {
-  font-size: 0.9rem;
-}
-
-.theme-announcement-bar button {
-  color: inherit;
-}
-
 /* ---- Docs ---- */
 .theme-doc-markdown h1 {
   letter-spacing: -0.02em;

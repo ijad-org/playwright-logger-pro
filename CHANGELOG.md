@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0
+## 0.2.0 - 2026-10-30
 
 ### Added
 
@@ -10,6 +10,7 @@
 - Secret masking by default: `fill()`/`type()` into password-like targets, keyboard input after such a target, literal `redact.values`, sensitive object keys inside arguments, header/cookie/credential values, URL userinfo passwords, console text and page errors. Opt-in `redact.inspectInputType` DOM probe. One shared sensitive-key list (`DEFAULT_SENSITIVE_KEYS`) for both loggers.
 - Outputs: live `print`, an `'on-failure'` block, a `browser-log` report attachment (text or JSONL), and per-test files (`file`, `fileFormat`, `fileDir`). ANSI never reaches files or attachments.
 - apiLog lines are copied into the browser log's attachment and files (`includeApiLog`), never printed twice.
+- Documentation site (Docusaurus, GitHub Pages) with guides, configuration reference, API docs, migration notes and offline search; the changelog page is generated from this file.
 - CI matrix (Playwright 1.30 / 1.39 / 1.48 / latest, Chromium; latest also Firefox and WebKit), a weekly prototype-drift job, a package check (`publint`, `attw`, CJS and ESM smoke tests) and an overhead benchmark.
 
 ### Changed
@@ -28,6 +29,7 @@
 - **PCL-33 (docs): Playwright-owned artifacts.** The README now says that HTML report step titles, `error-context.md` and traces can contain raw values even with traces off, and that `redact.*` does not affect them.
 - **PCL-34: malformed `test.step` location.** Stack frames without parentheses (`at /abs/file.ts:11:5`) no longer keep the `at ` prefix; `file://` URLs and Windows paths are handled.
 - **PCL-35: `location: true`** reports the spec file and line instead of this library's `dist/` file (library, Playwright and node frames are skipped).
+- **PCL-27 / PCL-28: redirect replay.** In a chain of redirects each step's `curl` starts from the previous step's request, so a body dropped by a 301/302/303 no longer comes back on a later 307/308. Headers follow the redirect rules of the installed Playwright (Cookie and cross-origin Authorization handling differ between 1.30–1.31, 1.32–1.59 and 1.60+).
 - **PCL-47: query strings in browserLog URLs.** Values of sensitive query parameters (apiLog's `redactQueryParams` defaults: `api_key`, `apikey`, `token`, `access_token`, `password`, `secret`) are masked by default in every URL browserLog prints: action arguments, navigations and redirect targets, popups, downloads, network lines and URLs in console text and errors. It shares apiLog's `redactUrl` logic and list; new `redact.queryParams` adds names. `redact.values` still applies on top.
 - **PCL-46: `redact.selectors` and `redact.keys` add to the defaults** instead of replacing them, as apiLog's lists do (`#nick` no longer un-masks `#password`/`#pin`). `replaceDefaultRedaction: true` in the `apiLog` option opts out. **Behaviour change:** configs that relied on replacing the defaults (to stop masking `#pin`, say) must now set it.
 - **PCL-36: option validation.** `browserLog` warns once on unknown options and on invalid types or values and falls back to the defaults; `maxEvents` of `0`, negative or fractional values no longer suppress the failure block.

@@ -11,7 +11,6 @@ test('home page renders', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'View on GitHub' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'GitHub repository' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'npm package' })).toBeVisible();
-  await expect(page.getByText('Preview: these docs describe playwright-logger-pro 0.2.0')).toBeVisible();
 });
 
 test.describe('search', () => {

@@ -138,8 +138,8 @@ test.describe('known limitation and its mitigations', () => {
   });
 
   test.describe('custom selectors', () => {
-    test.use({ browserLog: { redact: { selectors: [...lib.DEFAULT_SENSITIVE_SELECTORS, '#field7'] } } });
-    test('extending the default list masks the extra field', async ({ page, browserLogger }) => {
+    test.use({ browserLog: { redact: { selectors: ['#field7'] } } });
+    test('custom selectors add to the defaults: the extra field and #password are both masked', async ({ page, browserLogger }) => {
       await page.goto('/login');
       await page.locator('#field7').fill(CANARY);
       await page.locator('#password').fill(CANARY);

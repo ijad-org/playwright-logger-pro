@@ -25,7 +25,7 @@ const config: Config = {
   trailingSlash: false,
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
-  // Preview phase: set DOCS_NOINDEX=1 (repository variable) to keep search engines out. Remove at release.
+  // Set DOCS_NOINDEX=1 (repository variable) to keep search engines out.
   noIndex: process.env.DOCS_NOINDEX === '1',
   i18n: {defaultLocale: 'en', locales: ['en']},
 
@@ -110,13 +110,6 @@ const config: Config = {
   themeConfig: {
     image: 'img/social-card.png',
     colorMode: {defaultMode: 'light', respectPrefersColorScheme: true, disableSwitch: false},
-    // PREVIEW BANNER: delete this block when 0.2.0 is published (release PR).
-    announcementBar: {
-      id: 'preview-0-2-0',
-      content:
-        'Preview: these docs describe playwright-logger-pro 0.2.0, which is not published yet. 0.1.0 on npm has API logging only.',
-      isCloseable: true,
-    },
     navbar: {
       title: 'Playwright Logger Pro',
       logo: {alt: 'Playwright Logger Pro logo', src: 'img/logo.svg', srcDark: 'img/logo-dark.svg', width: 28, height: 28},

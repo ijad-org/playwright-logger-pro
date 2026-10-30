@@ -31,6 +31,6 @@ Offline: `@easyops-cn/docusaurus-search-local` builds a lunr index at build time
 
 Tag `vX.Y.Z` on `main`: the Release workflow only verifies, packs and creates a draft GitHub release. Nothing is published to npm from GitHub; the maintainer publishes locally with `npm publish --auth-type=web` after LQA GO and an explicit yes. Full steps in [CONTRIBUTING.md](../CONTRIBUTING.md#releasing).
 
-## Preview phase
+## Search-engine indexing
 
-Until 0.2.0 is published: the announcement bar in `docusaurus.config.ts` and, optionally, the repository variable `DOCS_NOINDEX=1`. Remove both in the release PR, and snapshot the docs version (`npx docusaurus docs:version 0.2`).
+Set the repository variable `DOCS_NOINDEX=1` to keep search engines out (e.g. before a release). Unset it to allow indexing.
