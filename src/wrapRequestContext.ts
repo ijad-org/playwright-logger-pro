@@ -15,6 +15,7 @@ import { describeMultipart } from './multipart';
 import { detectPlaywrightVersion } from './playwrightVersion';
 import { readRedirectChain } from './redirects';
 import { redactBodyString, redactBodyValue, redactUrl } from './redact';
+import { ensureStackHygiene } from './browser/stackHygiene';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch'] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -125,6 +126,7 @@ export function wrapRequestContext(
 ): APIRequestContext {
   const cfg = resolveConfig(config);
   if (!cfg.enabled) return context;
+  ensureStackHygiene();
 
   const log = cfg.sink;
 
@@ -188,10 +190,11 @@ export function wrapRequestContext(
     };
 
     const started = Date.now();
-    const target = context[method] as (...a: unknown[]) => Promise<APIResponse>;
     let response: APIResponse;
     try {
-      response = await target.apply(context, args);
+      // Called as a method, not through apply/call: Playwright 1.30-1.48 derive
+      // the step title (`apiRequestContext.get(...)`) from this frame's name.
+      response = await (context as unknown as Record<HttpMethod, (...a: unknown[]) => Promise<APIResponse>>)[method](...args);
     } catch (error) {
       const requestedUrl = resolveRequestedUrl(url, options?.params, cfg.baseURL, undefined) ??
         withParams(url, options?.params);

@@ -1,0 +1,254 @@
+---
+title: Configuration
+description: Every apiLog and browserLog option with its type and default, the exported helpers and defaults, environment variables and precedence rules.
+---
+
+# Configuration
+
+Two option fixtures configure the loggers. Both are optional and flat objects.
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
+
+export default defineConfig<LoggerOptions>({
+  use: {
+    apiLog: { curl: 'on-failure' },
+    browserLog: { network: 'failed', redact: { values: [process.env.E2E_PASSWORD].filter((v): v is string => !!v) } },
+  },
+});
+```
+
+:::info Documentation is checked against the code
+The option tables on this page are compared with the library's option types and exported defaults when the site is built (`npm run check-config` in `website/`). A missing or extra option, or a wrong default, fails the build.
+:::
+
+## Precedence and merge rules {#precedence}
+
+- **`test.use()` replaces the whole object.** `test.use({ apiLog: { curl: true } })` replaces the `apiLog` from your config; it does not merge. Repeat the options you still want. The same holds for `browserLog`.
+- **`redact` is merged one level deep** with the defaults: setting `redact: { values: [...] }` keeps the default `selectors`, `keys` and the rest. Setting `redact.selectors` or `redact.keys` **adds** to the defaults; `apiLog.replaceDefaultRedaction: true` replaces them.
+- **`undefined` means the default.** An option explicitly set to `undefined` uses its default, which lets you write `colors: process.env.CI ? true : undefined`.
+- **Explicit `colors` wins** over every colour environment variable.
+- **Invalid values never throw.** An unknown option or invalid value prints a one-time `[playwright-logger-pro]` warning naming the option, and the default is used. (`maxEvents` must be a positive integer so a bad value can never switch the failure block off.)
+- **`httpCredentials` arrays.** Playwright reads `test.use({ httpCredentials: [a, b] })` as `[value, options]`, not as two credentials. To pass an array, write `test.use({ httpCredentials: [[a, b], { scope: 'test' }] })`.
+- **Redaction lists are merged** with the built-in lists, in apiLog and in browserLog's `redact`; see [`replaceDefaultRedaction`](#apilog-options), the one switch that drops the defaults of both.
+
+## apiLog options {#apilog-options}
+
+Configures request logging for the `request` fixture and `wrapRequestContext()`.
+
+{/* config-table: apiLog */}
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | `false` makes the wrapper a transparent pass-through. |
+| `colors` | `boolean` | auto | `true`/`false` force ANSI colours on/off (`true` wins over `NO_COLOR`). Auto: see [Environment variables](#environment-variables). |
+| `curl` | `boolean \| 'on-failure'` | `false` | Print the equivalent curl: never / for every request / only when the status is not 2xx or no response arrived. Other values warn and use `false`. |
+| `logHeaders` | `boolean` | `true` | Log request and response headers. |
+| `logBody` | `boolean` | `true` | Log request and response bodies. |
+| `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters. A number ≥ 0; `Infinity` disables truncation. Also applies to the curl body. |
+| `redactHeaders` | `string[]` | `[]` plus the built-in `authorization`, `cookie`, `set-cookie`, `x-api-key` | **Extra** header names masked in logs and curl. Case-insensitive; merged with the defaults. |
+| `redactQueryParams` | `string[]` | `[]` plus the built-in `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` | **Extra** query parameter names masked in logged URLs and curl. Merged with the defaults. |
+| `redactBodyKeys` | `string[]` | `[]` (no built-in keys) | **Extra** JSON/form body keys and multipart field names masked in logged bodies and curl, at any depth. |
+| `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only your lists are used, and a list you leave out redacts nothing. Also applies to `browserLog.redact` (`selectors`, `keys`, `queryParams`, `headers`). Dangerous. |
+| `sink` | `(line: string) => void` | `console.log` | Where log lines go. A throwing sink warns once and falls back to `console.log`. |
+| `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs and the original URL of redirected requests. The fixture fills it in; pass it yourself with `wrapRequestContext()`. |
+| `extraHTTPHeaders` | `Record<string, string>` | fixture: `use.extraHTTPHeaders` | Headers the context sends with every request, shown in logged headers and curl. The fixture fills it in; with `wrapRequestContext()` pass the headers you gave `newContext()`. |
+
+## browserLog options {#browserlog-options}
+
+{/* config-table: browserLog */}
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | `false`: no patches, listeners or session for the test. |
+| `colors` | `boolean` | auto | Colours for `print` only. Files and attachments are always plain text. |
+| `actions` | `boolean` | `true` | Interactions and navigations (`click`, `fill`, `goto`, ...). |
+| `waits` | `boolean` | `true` | `waitFor*`, `locator.waitFor`, `waitForTimeout`. |
+| `queries` | `boolean` | `false` | Read-only async calls (`textContent`, `isVisible`, `count`, ...). Results are never logged. |
+| `mouseMoves` | `boolean` | `false` | `mouse.move` (noisy). |
+| `navigation` | `boolean` | `true` | Main-frame navigations, page open/close/popup/crash, dialogs, downloads. |
+| `browserConsole` | `false \| 'error' \| 'warning' \| 'info' \| 'all'` | `'warning'` | Minimum console level to record. |
+| `pageErrors` | `boolean` | `true` | Uncaught page exceptions. |
+| `network` | `false \| 'failed' \| 'documents' \| 'all'` | `false` | Network capture. `'failed'` = request failures and status ≥ 400; `'documents'` = document, xhr and fetch. Subscribing adds protocol traffic. |
+| `networkFilter` | `(r: { url: string; method: string; resourceType: string }) => boolean` | none | Extra filter applied after `network`. |
+| `steps` | `boolean \| 'auto'` | `'auto'` | `test.step` integration. `'auto'` is on for Playwright ≥ 1.48. `false` turns it off. |
+| `includeApiLog` | `boolean` | `true` | Copy apiLog lines into the attachment and file (never printed twice). |
+| `logStart` | `boolean` | `false` | Also print a line when an action starts (needs `print: true`). |
+| `slowActionMs` | `number` | `1000` | Highlight actions slower than this many ms; JSONL gets `slow: true`. A number ≥ 0. |
+| `location` | `boolean` | `false` | Append the call site in your spec, such as `(login.spec.ts:14)`. Costs one stack capture per action. |
+| `maxArgLength` | `number` | `200` | Truncate each rendered argument and console message. A positive integer or `Infinity`. |
+| `maxEvents` | `number` | `5000` | Ring buffer per test; the oldest events are dropped and a marker says how many. A positive integer. |
+| `redact` | `BrowserRedactConfig` | see below | Secret masking. |
+| `print` | `boolean \| 'on-failure'` | `'on-failure'` | Print to `sink`: live (`true`) or one block when the test failed. |
+| `attach` | `boolean \| 'on-failure'` | `'on-failure'` | Attach `browser-log` to the report. |
+| `attachFormat` | `'text' \| 'jsonl'` | `'text'` | Format of the attachment. |
+| `file` | `boolean \| 'on-failure'` | `false` | Write a per-test file. |
+| `fileFormat` | `'text' \| 'jsonl'` | `'text'` | Format of the file. |
+| `fileDir` | `string` | the test's output directory | Directory for per-test files. Never cleaned by the logger. |
+| `sink` | `(line: string) => void` | `console.log` | Where printed text goes. |
+
+### browserLog.redact {#browserlogredact}
+
+{/* config-table: browserLog.redact */}
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `mask` | `string` | `'***'` | Replacement for masked values. |
+| `fillValues` | `'auto' \| 'always' \| 'never'` | `'auto'` | Masking of typed values. `'auto'`: when the target looks sensitive. `'always'`: every typed value. `'never'`: none (`values` still applies). |
+| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description; strings are case-insensitive substrings. **Added** to the default list; `apiLog.replaceDefaultRedaction: true` replaces it. Text is also matched after splitting on camelCase, `_` and `-`, for your own entries too. |
+| `values` | `string[]` | `[]` | Literal secrets masked everywhere, in addition to the ones collected automatically. Values shorter than 4 characters are ignored. |
+| `keys` | `(string \| RegExp)[]` | the sensitive key patterns | Object keys masked inside arguments. **Added** to the default patterns; `apiLog.replaceDefaultRedaction: true` replaces them. |
+| `queryParams` | `string[]` | apiLog's resolved list: `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` plus your `apiLog.redactQueryParams` | Extra query parameter names, added to apiLog's `redactQueryParams` (defaults included). Their values are masked in every URL the browser log prints. |
+| `headers` | `string[]` | apiLog's resolved list: `authorization`, `cookie`, `set-cookie`, `x-api-key` plus your `apiLog.redactHeaders` | Extra header names, added to apiLog's `redactHeaders` (defaults included). |
+| `inspectInputType` | `boolean` | `false` | Opt-in DOM probe for `type=password` after a fill. One extra round trip per distinct field. |
+
+## `buildCurl` options {#curl-options}
+
+`buildCurl(info, redactHeaderNames?, options?)` is exported for building a curl yourself: `info` is a `RequestInfo`, the second argument lists header names to mask, and the third is `CurlOptions`:
+
+{/* config-table: curl-options */}
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `redactQueryParams` | `readonly string[]` | none | Query parameter names whose values are masked in the URL. |
+| `redactBodyKeys` | `readonly string[]` | none | JSON/form body keys and multipart field names whose values are masked. |
+| `maxBodyLength` | `number` | none | Truncate the request body (and each form/field value) beyond this many characters. |
+
+## Fixtures and exports {#fixtures-and-exports}
+
+From `playwright-logger-pro/fixtures`:
+
+{/* config-table: exports-fixtures */}
+| Name | Type | Description |
+| --- | --- | --- |
+| `test` | `TestType` | Drop-in replacement for Playwright's `test`: wraps `request` and records browser actions. Adds the `apiLog` and `browserLog` option fixtures and the `browserLogger` fixture. |
+| `expect` | `Expect` | Playwright's `expect`, re-exported. |
+| `mergeTests` | `typeof mergeTests` | Playwright's `mergeTests` (1.39+) that keeps the step integration. Throws on older Playwright. |
+| `LoggerOptions` | type | `ApiLoggerOptions & BrowserLoggerOptions`, for `defineConfig<LoggerOptions>()`. |
+| `ApiLoggerOptions` | type | `{ apiLog: ApiLoggerConfig }`. |
+| `BrowserLoggerOptions` | type | `{ browserLog: BrowserLoggerConfig }`. |
+| `BrowserLoggerFixtures` | type | `{ browserLogger: BrowserLogHandle }`. |
+| `BrowserLogHandle` | type | `note()`, `events()`, `render()`, `detach()`. See [Browser logging](./browser-logging.mdx#notes-and-events-from-your-test). |
+| `BrowserLoggerConfig` | type | The `browserLog` option type. |
+
+From `playwright-logger-pro`:
+
+{/* config-table: exports-index */}
+| Name | Type | Description |
+| --- | --- | --- |
+| `wrapRequestContext` | function | Wrap an `APIRequestContext` with API logging. |
+| `attachBrowserLogger` | function | Record a page or context you manage yourself. |
+| `buildCurl` | function | Build the curl command for a `RequestInfo`. |
+| `resolveConfig` | function | Validate an `ApiLoggerConfig` and fill in defaults. |
+| `resolveBrowserConfig` | function | Validate a `BrowserLoggerConfig` and fill in defaults. |
+| `detectColorSupport` | function | The colour auto-detection used by both loggers. |
+| `DEFAULT_CONFIG` | constant | Resolved defaults of `apiLog`. |
+| `DEFAULT_BROWSER_CONFIG` | constant | Resolved defaults of `browserLog`. |
+| `DEFAULT_REDACT_HEADERS` | constant | `authorization`, `cookie`, `set-cookie`, `x-api-key`. |
+| `DEFAULT_REDACT_QUERY_PARAMS` | constant | `api_key`, `apikey`, `token`, `access_token`, `password`, `secret`. |
+| `DEFAULT_REDACT_BODY_KEYS` | constant | Empty. |
+| `DEFAULT_SENSITIVE_KEYS` | constant | Names that usually hold secrets (`password`, `token`, `api_key`, `authorization`, `cookie`, `otp`, `pin`, `cvv`, ...), shared by both loggers. |
+| `DEFAULT_SENSITIVE_SELECTORS` | constant | Patterns matched against a target's description to decide whether a typed value is masked. |
+| `renderBrowserEventText` | function | Render one browser event as text. |
+| `renderBrowserEventJsonl` | function | Render one browser event as a JSONL line. |
+| `formatRequestLine` | function | Low-level formatting helper. |
+| `formatResponseLine` | function | Low-level formatting helper. |
+| `formatErrorLine` | function | Low-level formatting helper. |
+| `formatHeaders` | function | Low-level formatting helper. |
+| `formatBody` | function | Low-level formatting helper. |
+| `describeResponseBody` | function | Text to log for a response body (binary placeholder for non-text types). |
+| `describeMultipart` | function | Describe a multipart payload for logs and curl. |
+| `escapeControlChars` | function | Escape control characters in text. |
+| `redactHeaders` | function | Mask header values by name. |
+| `redactUrl` | function | Mask query parameter values in a URL. |
+| `redactQueryString` | function | Mask query parameter values in a query string. |
+| `redactBodyValue` | function | Mask keys in a parsed body. |
+| `redactBodyString` | function | Mask keys in a body string (JSON, form). |
+| `truncateBody` | function | Truncate a body at a character boundary. |
+| `stringifyBody` | function | Turn a request body into a string. |
+| `ApiLoggerConfig` | type | The `apiLog` option type. |
+| `ResolvedConfig` | type | `ApiLoggerConfig` after `resolveConfig()`. |
+| `BrowserLoggerConfig` | type | The `browserLog` option type. |
+| `BrowserRedactConfig` | type | The `browserLog.redact` option type. |
+| `ResolvedBrowserConfig` | type | `BrowserLoggerConfig` after `resolveBrowserConfig()`. |
+| `BrowserLogEvent` | type | The event union, see [the JSONL format](./reporter-attachments.mdx#jsonl). |
+| `BrowserLogHandle` | type | The handle returned by `attachBrowserLogger()` and the `browserLogger` fixture. |
+| `CurlOptions` | type | Options of `buildCurl`. |
+| `RequestInfo` | type | The request description `buildCurl` takes. |
+| `RedirectHop` | type | One request Playwright sent while following redirects. |
+
+:::note Low-level helpers
+The formatting and redaction helpers are exported for advanced use and are likely to be reviewed before 1.0. Signatures are in the [API reference](/docs/api).
+:::
+
+The `BrowserLogEvent` kinds are listed in [Reporter & attachments](./reporter-attachments.mdx#jsonl).
+
+## Environment variables {#environment-variables}
+
+These decide the default for `colors` (both loggers) when you do not set it, in this order:
+
+| Variable | Effect |
+| --- | --- |
+| `NO_COLOR` | Non-empty: colours off. |
+| `FORCE_COLOR`, `DEBUG_COLORS` | `0` or `false`: colours off. Any other value (including empty for `FORCE_COLOR`): on. `playwright test` sets both for its workers, which is why colours normally work in test output although the workers' stdout is a pipe. |
+| `PLAYWRIGHT_FORCE_TTY` | Anything but `0`/`false`: on. |
+| `TERM=dumb` | Off (checked before the TTY test). |
+| TTY | On when stdout or stderr is a TTY; otherwise off. |
+
+`colors: true` or `false` in the options always wins, including over `NO_COLOR`.
+
+| Variable | Effect |
+| --- | --- |
+| `DEBUG=plp` (any value containing `plp`) | Prints a warning when the library could not hide its own frames from Playwright (step locations may then point into the library). |
+
+## Examples
+
+<Tabs groupId="lang">
+<TabItem value="ts" label="TypeScript" default>
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
+
+export default defineConfig<LoggerOptions>({
+  use: {
+    apiLog: {
+      curl: 'on-failure',
+      redactQueryParams: ['sig'],
+      redactBodyKeys: ['password'],
+    },
+    browserLog: {
+      print: process.env.CI ? 'on-failure' : true,
+      network: 'failed',
+      file: 'on-failure',
+      fileFormat: 'jsonl',
+      fileDir: 'logs/browser',
+      redact: {
+        values: [process.env.E2E_PASSWORD].filter((v): v is string => !!v),
+        selectors: ['#pin-pad'],
+      },
+    },
+  },
+});
+```
+
+</TabItem>
+<TabItem value="js" label="JavaScript">
+
+```js title="playwright.config.js"
+const { defineConfig } = require('@playwright/test');
+
+module.exports = defineConfig({
+  use: {
+    apiLog: { curl: 'on-failure', redactQueryParams: ['sig'], redactBodyKeys: ['password'] },
+    browserLog: {
+      print: process.env.CI ? 'on-failure' : true,
+      network: 'failed',
+      redact: {
+        values: [process.env.E2E_PASSWORD].filter(Boolean),
+        selectors: ['#pin-pad'],
+      },
+    },
+  },
+});
+```
+
+</TabItem>
+</Tabs>

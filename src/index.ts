@@ -24,3 +24,19 @@ export {
 } from './types';
 export { describeMultipart } from './multipart';
 export { redactUrl, redactQueryString, redactBodyValue, redactBodyString } from './redact';
+export {
+  attachBrowserLogger,
+  DEFAULT_BROWSER_CONFIG,
+  DEFAULT_SENSITIVE_KEYS,
+  DEFAULT_SENSITIVE_SELECTORS,
+  renderBrowserEventJsonl,
+  renderBrowserEventText,
+  resolveBrowserConfig,
+} from './browser';
+export type {
+  BrowserLogEvent,
+  BrowserLogHandle,
+  BrowserLoggerConfig,
+  BrowserRedactConfig,
+  ResolvedBrowserConfig,
+} from './browser';

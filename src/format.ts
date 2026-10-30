@@ -57,11 +57,12 @@ function palette(colors: boolean): Palette {
 export function redactHeaders(
     headers: Record<string, string>,
     redactList: readonly string[],
+    mask: string = '***',
 ): Record<string, string> {
   const lowered = redactList.map((h) => h.toLowerCase());
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    out[key] = lowered.includes(key.toLowerCase()) ? '***' : value;
+    out[key] = lowered.includes(key.toLowerCase()) ? mask : value;
   }
   return out;
 }

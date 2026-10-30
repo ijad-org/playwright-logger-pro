@@ -138,7 +138,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 };
 
 /** Names from `lists`, case-insensitively deduplicated, first spelling wins. */
-function mergeNames(...lists: Array<readonly string[]>): string[] {
+export function mergeNames(...lists: Array<readonly string[]>): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const name of lists.flat()) {

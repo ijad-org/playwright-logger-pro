@@ -1,0 +1,88 @@
+.terminal {
+  margin: 0 0 var(--ifm-leading) 0;
+  border: 1px solid var(--ansi-border);
+  border-radius: 0.75rem;
+  background: var(--ansi-bg);
+  color: var(--ansi-fg);
+  overflow: hidden;
+  text-align: left;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--ansi-border);
+  font-size: 0.8rem;
+  color: var(--ansi-dim);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.dots i {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--ansi-border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy {
+  border: 1px solid var(--ansi-border);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--ansi-dim);
+  font: inherit;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+
+.copy:hover {
+  color: var(--ansi-fg);
+}
+
+.pre {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  background: transparent;
+  color: inherit;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  border-radius: 0;
+}
+
+.pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+/* Global ANSI colour classes (used inside <code>). */
+.pre :global(.ansi-red) { color: var(--ansi-red); }
+.pre :global(.ansi-green) { color: var(--ansi-green); }
+.pre :global(.ansi-yellow) { color: var(--ansi-yellow); }
+.pre :global(.ansi-blue) { color: var(--ansi-blue); }
+.pre :global(.ansi-magenta) { color: var(--ansi-magenta); }
+.pre :global(.ansi-cyan) { color: var(--ansi-cyan); }
+.pre :global(.ansi-gray),
+.pre :global(.ansi-black) { color: var(--ansi-gray); }
+.pre :global(.ansi-white) { color: var(--ansi-fg); }
+.pre :global(.ansi-dim) { color: var(--ansi-dim); }
+.pre :global(.ansi-bold) { font-weight: 700; }
+.pre :global(.ansi-italic) { font-style: italic; }
+.pre :global(.ansi-underline) { text-decoration: underline; }

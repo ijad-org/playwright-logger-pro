@@ -1,0 +1,125 @@
+---
+title: CI recipes
+description: Using Playwright Logger Pro on GitHub Actions, GitLab CI, Jenkins and in Docker, and keeping CI logs small.
+---
+
+# CI recipes
+
+The defaults are CI-friendly: browser logging prints and attaches only for failed tests, and API logging prints every request. This page shows how to tune that.
+
+## One config for local and CI
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+import type { LoggerOptions } from 'playwright-logger-pro/fixtures';
+
+const ci = !!process.env.CI;
+
+export default defineConfig<LoggerOptions>({
+  reporter: ci ? [['github'], ['html', { open: 'never' }]] : 'list',
+  use: {
+    apiLog: {
+      curl: 'on-failure',            // a replayable command for failures only
+      maxBodyLength: ci ? 500 : 2000,
+    },
+    browserLog: {
+      print: ci ? 'on-failure' : true, // live timeline locally, one block in CI
+      network: 'failed',
+      redact: {
+        values: [process.env.E2E_PASSWORD, process.env.API_TOKEN].filter((v): v is string => !!v),
+      },
+    },
+  },
+});
+```
+
+## GitHub Actions
+
+```yaml title=".github/workflows/e2e.yml"
+name: e2e
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env:
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+```
+
+- **Colours.** `playwright test` sets `FORCE_COLOR` for its workers, so colours appear in the Actions log. Use `NO_COLOR=1` or `colors: false` if you prefer plain logs.
+- **Failure details.** The `browser-log` attachment is in the HTML report artifact. The same text is in the job log.
+- **Secrets.** Pass them through `redact.values` as above. Workflow secrets are masked by GitHub in logs, but the report and attachments are separate files.
+
+:::danger Reports are artifacts
+`playwright-report/` and `test-results/` can contain raw values typed in tests (Playwright's own step titles, snapshots and traces). Read [Redaction & security](./redaction-security.mdx#known-limits) before uploading them from a run that types real secrets.
+:::
+
+## GitLab CI
+
+```yaml title=".gitlab-ci.yml"
+e2e:
+  image: mcr.microsoft.com/playwright:v1.50.0-noble
+  script:
+    - npm ci
+    - npx playwright test
+  artifacts:
+    when: on_failure
+    paths:
+      - playwright-report/
+    expire_in: 1 week
+```
+
+GitLab renders ANSI colours in job logs. Match the image tag to your `@playwright/test` version.
+
+## Jenkins
+
+The console view shows raw escape codes unless the *AnsiColor* plugin is on. Either enable it (`ansiColor('xterm')` wrapper) or switch colours off:
+
+```groovy
+withEnv(['NO_COLOR=1']) {
+  sh 'npx playwright test'
+}
+```
+
+`NO_COLOR` set to a non-empty value turns colours off for both loggers. `colors: true` in the options still wins.
+
+## Docker
+
+Inside a container there is no TTY, but `playwright test` sets `FORCE_COLOR` for its workers, so colours are on. For other runners, force them with `colors: true` or set `FORCE_COLOR=1`; disable with `NO_COLOR=1`.
+
+## Sharding and blob reports
+
+Shards each run their own workers, so each prints its own failure blocks. With `--reporter=blob` and `merge-reports`, the `browser-log` attachments are part of the merged report. Files from `fileDir` live on each shard's machine; upload them from every shard.
+
+## JSONL artifacts for later analysis
+
+```ts
+use: { browserLog: { file: 'on-failure', fileFormat: 'jsonl', fileDir: 'logs/browser' } }
+```
+
+Upload `logs/browser/` as an artifact and query it with `jq`; see [the format](./reporter-attachments.mdx#jsonl).
+
+## Keeping CI logs small
+
+| Option | Effect |
+| --- | --- |
+| `apiLog.maxBodyLength` | Cut request and response bodies (also in the curl). |
+| `apiLog.logBody: false`, `apiLog.logHeaders: false` | No bodies or headers at all. |
+| `apiLog.curl: 'on-failure'` | A curl only for failures. |
+| `browserLog.maxEvents` | Ring buffer size; oldest events are dropped and a marker says how many. |
+| `browserLog.maxArgLength` | Cut each rendered argument and console message. |
+| `browserLog.browserConsole: 'error'` | Fewer console lines. |
+| `browserLog.print: 'on-failure'` | Nothing for passing tests (the default). |

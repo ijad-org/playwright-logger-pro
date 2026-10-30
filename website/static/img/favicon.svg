@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .badge { fill: #15803d; }
+    .arrows { fill: none; stroke: #ffffff; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-color-scheme: dark) {
+      .badge { fill: #4ade80; }
+      .arrows { stroke: #052e16; }
+    }
+  </style>
+  <rect class="badge" width="64" height="64" rx="14"/>
+  <g class="arrows">
+    <path d="M12 20H42M35 13L42 20L35 27"/>
+    <path d="M52 44H22M29 37L22 44L29 51"/>
+  </g>
+</svg>
