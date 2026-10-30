@@ -72,9 +72,9 @@ test('key presses: only typed characters are secret', () => {
   assert.equal(renderArgs(K.type, ['secret text'], ctx({ maskSecret: true })).text, '***');
 });
 
-test('URLs: userinfo passwords are masked, query strings are left alone (no query redaction yet)', () => {
-  const out = renderArgs(P.goto, ['https://jo:hunter2@host.test/p?token=abc'], ctx());
-  assert.equal(out.text, "'https://jo:***@host.test/p?token=abc'");
+test('URLs: userinfo passwords and default sensitive query parameters are masked', () => {
+  const out = renderArgs(P.goto, ['https://jo:hunter2@host.test/p?token=abc&n=1'], ctx());
+  assert.equal(out.text, "'https://jo:***@host.test/p?token=***&n=1'");
   assert.equal(renderArgs(P.goto, ['/x', { referer: 'https://u:pw123456@h/' }], ctx()).text, "'/x', { referer: 'https://u:***@h/' }");
 });
 
@@ -164,11 +164,11 @@ test('fillValues: always masks everything, never masks nothing (literal values s
   assert.deepEqual(lastArgs(never.s), ["'***'", "'other-value'"]);
 });
 
-test('custom selectors extend the defaults when spread', async () => {
+test('custom selectors add to the defaults', async () => {
   const { s, page } = sessionFor({ redact: { selectors: ['#vault'] } });
   await page.locator('#vault').fill('abcdefgh');
   await page.locator('#password').fill('ijklmnop');
-  assert.deepEqual(lastArgs(s), ['***', "'ijklmnop'"]); // replaced, not merged: documented
+  assert.deepEqual(lastArgs(s), ['***', '***']);
 });
 
 test('errors never echo a masked secret', async () => {

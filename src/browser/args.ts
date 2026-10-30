@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { redactHeaders, splitChars } from '../format';
-import { maskUrl, redactText, sanitizeDeep } from '../redact';
+import { maskUrl, redactText, redactUrlsInText, sanitizeDeep } from '../redact';
 import { describeFrame, describeLocator, playwrightClass, quote } from './describe';
 import type { MethodSpec } from './methods';
 import type { ResolvedRedactConfig } from './types';
@@ -76,7 +76,8 @@ class Renderer {
   }
 
   private text(s: string): string {
-    return redactText(maskUrl(s, undefined, this.ctx.redact.mask), this.values, this.ctx.redact.mask);
+    const { mask, queryParams } = this.ctx.redact;
+    return redactText(redactUrlsInText(maskUrl(s, undefined, mask, queryParams), queryParams, mask), this.values, mask);
   }
 
   /** JS-like literal for an already sanitised value. */
@@ -109,7 +110,7 @@ class Renderer {
     switch (cls) {
       case 'Locator': case 'FrameLocator': return new Bare(describeLocator(x));
       case 'Page': return new Bare('page');
-      case 'Frame': return new Bare(describeFrame(x));
+      case 'Frame': return new Bare(this.text(describeFrame(x)));
       case 'ElementHandle': return new Bare('elementHandle');
       default: return new Bare(`<${cls}>`);
     }

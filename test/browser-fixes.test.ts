@@ -141,10 +141,10 @@ describe('PCL-30: typed secrets are learned for the rest of the test', () => {
     assert.deepEqual(texts(s, 'console'), ['echo ***']);
   });
 
-  test('query-string redaction by key is still not a feature: only learned values are masked', async () => {
+  test('sensitive query parameters are masked by name, other parameters are kept', async () => {
     const { s, ctx } = sessionFor();
     ctx.emit('response', response('http://x.test/api?token=ordinary-token-value&n=1'));
-    assert.ok(s.events().some((e) => e.kind === 'network' && e.url === 'http://x.test/api?token=ordinary-token-value&n=1'));
+    assert.ok(s.events().some((e) => e.kind === 'network' && e.url === 'http://x.test/api?token=***&n=1'));
   });
 
   test('inspectInputType: a provisionally learned value is taken back when the probe finds an ordinary field', async () => {
@@ -445,7 +445,7 @@ describe('PCL-36: browserLog options are validated', () => {
     assert.ok(warnings.some((w) => /"redact\.headers" must be an array of strings/.test(w)));
     assert.deepEqual(result.redact.values, ['good-secret-1']);
     assert.deepEqual(result.redact.selectors, [...DEFAULT_SENSITIVE_SELECTORS]);
-    assert.equal(result.redact.keys.length, 1);
+    assert.deepEqual(result.redact.keys, [...DEFAULT_BROWSER_CONFIG.redact.keys, /x/]);
   });
 
   test('the whole option must be an object', async () => {
