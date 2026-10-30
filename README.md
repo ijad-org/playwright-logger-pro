@@ -289,7 +289,7 @@ An option set to `undefined` uses its default. An option with an invalid value (
 With `colors` unset the logger decides like Playwright's own reporters do, in this order:
 
 1. **Off** when `NO_COLOR` is set to a non-empty value, or `FORCE_COLOR` / `DEBUG_COLORS` is `0` or `false`.
-2. **On** when `FORCE_COLOR` (any other value) or `DEBUG_COLORS` is set. `playwright test` sets both for its workers, which is why colors normally work in test output even though the workers' stdout is a pipe.
+2. **On** when `FORCE_COLOR` (any other value) or `DEBUG_COLORS` is set. `playwright test` sets both for its workers, so the logger emits colors even though the workers' stdout is a pipe. Whether you *see* them depends on Playwright's reporter (see the note below).
 3. **On** when `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`).
 4. **On** when stdout or stderr is a TTY (unless `TERM=dumb`); **off** otherwise.
 
@@ -298,6 +298,8 @@ If your runner or CI does not set `FORCE_COLOR` for the workers and the output i
 ```ts
 use: { apiLog: { colors: true } }
 ```
+
+> **Note:** `colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), Playwright strips every ANSI code from the test stdout it forwards, so the console shows no colors even with `colors: true`. Run in a terminal, or send the lines to a `sink` (a file, an attachment): the `sink` receives them with the colors intact.
 
 Some things to know about the output:
 
@@ -316,7 +318,16 @@ The curl is meant to be pasted into a terminal to replay the request. Keep in mi
 - **Truncated bodies are incomplete.** When the request body is longer than `maxBodyLength`, the curl body is cut too, and the command starts with a `# request body truncated…` comment. Raise `maxBodyLength` to get a body that replays in full.
 - **Binary bodies are read from a file.** A `Buffer` body cannot be pasted into a shell, so the curl sends `--data-binary '@request-body.bin'` and starts with a `# binary request body (N bytes) is not included…` comment. Save the bytes as `request-body.bin` in the current directory first.
 - **Multipart files are read from disk.** File parts are sent with `-F 'name=@<file>'`. A file given as a path is read from that path. A file given as an in-memory buffer is read from its file name in the current directory, as the `# multipart file content…` comment says.
-- **Redirects.** Playwright's rules differ from `curl -L`: a 303 turns any method except GET/HEAD into a GET without a body, a 301/302 turns a POST into a GET, and PUT/PATCH/DELETE keep their method and body on 301/302/307/308. A redirected GET or HEAD gets `-L`. Any other redirected request gets one curl per step, with the method, URL and body Playwright actually used (a step that became a GET has no body and no `Content-Type`/`Content-Length`; `Cookie` is left out of later steps, and `Authorization` when the redirect leaves the origin). The steps are read from Playwright's fetch log; if that is not available, a POST with a body is replayed with `-L` and any other method is replayed without following the redirect, with a comment saying so.
+- **Redirects.** Playwright's rules differ from `curl -L`: a 303 turns any method except GET/HEAD into a GET without a body, a 301/302 turns a POST into a GET, and PUT/PATCH/DELETE keep their method and body on 301/302/307/308. A redirected GET or HEAD gets `-L`. Any other redirected request gets one curl per step, with the method, URL and body Playwright actually used (a step that became a GET has no body and no `Content-Type`/`Content-Length`, and it stays a bodiless GET on later 307/308 steps; which headers are forwarded depends on the Playwright version, see below). The steps are read from Playwright's fetch log; if that is not available, a POST with a body is replayed with `-L` and any other method is replayed without following the redirect, with a comment saying so.
+- **Redirect headers by Playwright version.** Which headers Playwright forwards to a redirect target changed between releases, and the step curls follow the version that is installed (read from its `package.json`; when it cannot be found the 1.60+ rules are used). Secrets are redacted in every step as usual.
+
+  | Playwright | `Cookie` you set | `Authorization` to another origin |
+  | --- | --- | --- |
+  | 1.30 – 1.31 | dropped | forwarded |
+  | 1.32 – 1.59 | forwarded if spelled `Cookie`, dropped if spelled `cookie`; the same exact-case rule applies to `Content-Type` and the other body headers when a redirect becomes a GET | forwarded |
+  | 1.60+ | dropped | dropped |
+
+  Cookies from the cookie jar are never carried over: Playwright re-reads the jar for each step, and they are not in the printed steps. Note that on 1.30 – 1.59 a replayed step curl really does send your `Authorization` (and, on 1.32 – 1.59, `Cookie`) to the other origin, because Playwright did; the values in the printed curl are still redacted.
 - **Invalid URLs.** If the URL cannot be parsed, the curl is replaced by `# could not build curl: invalid URL`.
 - **Context state.** Headers from the context (`extraHTTPHeaders`) appear only when the logger knows them (the fixture fills them in; Option B needs the `extraHTTPHeaders` option). Cookies come from the context's cookie jar. Other context settings, such as `httpCredentials`, proxy, client certificates and `ignoreHTTPSErrors`, are not part of the curl.
 
