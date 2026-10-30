@@ -20,7 +20,7 @@ function decodeFormComponent(value: string): string {
  * application/x-www-form-urlencoded string such as a URL query. Everything
  * else is kept byte for byte.
  */
-export function redactQueryString(query: string, keys: readonly string[]): string {
+export function redactQueryString(query: string, keys: readonly string[], mask: string = REDACTED): string {
   if (keys.length === 0 || query.length === 0) return query;
   const names = lowerSet(keys);
   return query
@@ -29,20 +29,37 @@ export function redactQueryString(query: string, keys: readonly string[]): strin
         const eq = pair.indexOf('=');
         const rawName = eq === -1 ? pair : pair.slice(0, eq);
         if (!names.has(decodeFormComponent(rawName).toLowerCase())) return pair;
-        return `${rawName}=${REDACTED}`;
+        return `${rawName}=${mask}`;
       })
       .join('&');
 }
 
 /** Mask the values of the query parameters in `keys` (case-insensitive) in a URL. */
-export function redactUrl(url: string, keys: readonly string[]): string {
+export function redactUrl(url: string, keys: readonly string[], mask: string = REDACTED): string {
   if (keys.length === 0) return url;
   const hashAt = url.indexOf('#');
   const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
   const hash = hashAt === -1 ? '' : url.slice(hashAt);
   const queryAt = beforeHash.indexOf('?');
   if (queryAt === -1) return url;
-  return `${beforeHash.slice(0, queryAt + 1)}${redactQueryString(beforeHash.slice(queryAt + 1), keys)}${hash}`;
+  return `${beforeHash.slice(0, queryAt + 1)}${redactQueryString(beforeHash.slice(queryAt + 1), keys, mask)}${hash}`;
+}
+
+/** An absolute URL inside free text, up to whitespace, a quote or an angle bracket. */
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>]+/gi;
+const URL_TRAILING_PUNCTUATION = /[).,;:!\]}]+$/;
+
+/**
+ * Mask the query parameters in `keys` of every absolute URL found in `text`
+ * (error messages, console text, notes). Text without a URL is returned as is.
+ */
+export function redactUrlsInText(text: string, keys: readonly string[], mask: string = REDACTED): string {
+  if (keys.length === 0 || !text.includes('://')) return text;
+  return text.replace(URL_IN_TEXT, (match) => {
+    const trailing = URL_TRAILING_PUNCTUATION.exec(match)?.[0] ?? '';
+    const url = trailing ? match.slice(0, -trailing.length) : match;
+    return `${redactUrl(url, keys, mask)}${trailing}`;
+  });
 }
 
 function redactDeep(value: unknown, names: Set<string>): { value: unknown; changed: boolean } {
@@ -136,13 +153,19 @@ export const DEFAULT_SENSITIVE_KEYS: readonly string[] = Object.freeze([
 const USERINFO_PASSWORD = /^([a-z][a-z0-9+.-]*:\/\/[^/?#@\s:]*):([^/?#@\s]*)@/i;
 
 /**
- * Mask what is always a secret in a URL: the userinfo password
- * (`https://u:***@host`) and literal secret values. Query parameters are
- * left alone (see `redactUrl` for those). Works on relative and invalid URLs.
+ * Mask the secrets in a URL: the userinfo password (`https://u:***@host`),
+ * the values of the query parameters in `queryParams` (same logic as apiLog's
+ * `redactUrl`) and literal secret values. Works on relative and invalid URLs.
  */
-export function maskUrl(url: string, values?: readonly string[], mask: string = REDACTED): string {
+export function maskUrl(
+    url: string,
+    values?: readonly string[],
+    mask: string = REDACTED,
+    queryParams: readonly string[] = [],
+): string {
   if (typeof url !== 'string' || url.length === 0) return url;
-  return redactText(url.replace(USERINFO_PASSWORD, (_m, head: string) => `${head}:${mask}@`), values, mask);
+  const noPassword = url.replace(USERINFO_PASSWORD, (_m, head: string) => `${head}:${mask}@`);
+  return redactText(redactUrl(noPassword, queryParams, mask), values, mask);
 }
 
 /**

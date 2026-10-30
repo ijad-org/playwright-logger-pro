@@ -339,7 +339,7 @@ Masked by default (`***`), in everything the logger outputs: the console block, 
 | Typed values that were masked | **Learned for the rest of the test**: whatever the page echoes of such a value (console messages, page errors, network and navigation URLs including query strings, dialog text, notes, apiLog lines) is masked too, in the spellings listed under *Which spellings are masked* below. Values shorter than 4 characters (after trimming) are never learned, since masking them would shred ordinary text; they stay masked in their own action line. The logger remembers the newest 256 typed secrets. A value is learned from the moment it is typed, so output recorded earlier is not changed. A key pressed with `press()` is a single character and is not learned. With `inspectInputType` a value is learned provisionally until the probe says whether the field is a password. Learning does not need the action line itself to be logged (`actions: false`). |
 | Literal secrets in `redact.values` | Masked everywhere: arguments, URLs, console text, page errors, error messages, notes, apiLog lines. Values shorter than 4 characters are ignored (with a warning). Playwright's `httpCredentials.password` and the values of sensitive `extraHTTPHeaders` are added automatically; cookie values from `addCookies`, sensitive header values from `setExtraHTTPHeaders` and `setHTTPCredentials` passwords are learned at runtime. For an `Authorization: Bearer X` (or `Basic`, `Token`, …) header both the whole value and the bare token `X` are learned (`Basic` also its decoded password); a `Cookie` header also yields each cookie value. |
 | Object keys inside arguments (`evaluate` args, option bags) | Keys matching `redact.keys` (`password`, `token`, `secret`, `api_key`, `authorization`, `cookie`, …). |
-| URLs | The password in `https://user:pass@host` is always masked. **Query strings are not masked by browserLog yet**: put tokens that appear in URLs into `redact.values`. |
+| URLs | The password in `https://user:pass@host` is always masked, and so are the values of sensitive query parameters (`api_key`, `apikey`, `token`, `access_token`, `password`, `secret`: the same logic and default list as apiLog's `redactQueryParams`) in every URL browserLog prints: `goto` and other arguments, navigations and redirect targets, popups, downloads, network lines, and URLs inside console text and error messages. Other parameters are kept. Add names with `redact.queryParams` (or apiLog's `redactQueryParams`); `redact.values` still masks literal values on top. |
 | Headers, cookies, credentials | `setExtraHTTPHeaders` values for the apiLog header list; `addCookies` values always; `setHTTPCredentials` password always. Same header list as apiLog (`redactHeaders`). |
 | Files and big payloads | `setInputFiles` shows file names only; `setContent` is `<html 1.2 KB>`; scripts are `<script 340 B>`. |
 
@@ -357,17 +357,17 @@ When a masked call fails, its secret is also removed from the logged error messa
 
 **How selectors are matched.** The selector text (id, name, label, placeholder) is checked as written and again after it is split on camelCase, `_` and `-` boundaries, so `#cardExpDate`, `cardPAN` and `pan_number` are read as "card Exp Date", "card PAN" and "pan number" and caught by the whole-word patterns. Only real case changes are split, so `Japan`, `company` and `panel` stay clear. The same two-step check applies to your own `redact.selectors` (strings match case-insensitively as substrings, regular expressions are tested as-is), so a string such as `'card pan'` also matches `#card_pan`. The placeholders `MM/YY` and `MM/YYYY` are detected as expiry fields, as are the labels "Valid thru" and "Valid through".
 
-**Custom field names.** Extend the defaults rather than replacing them:
+**Custom field names.** `redact.selectors` and `redact.keys` are added to the defaults, as with apiLog's lists; the defaults stay masked:
 
 ```ts
-import { DEFAULT_SENSITIVE_SELECTORS } from 'playwright-logger-pro';
-
-use: { browserLog: { redact: { selectors: [...DEFAULT_SENSITIVE_SELECTORS, '#pin-pad'] } } }
+use: { browserLog: { redact: { selectors: ['#pin-pad'], keys: ['nickname'] } } }
 ```
+
+To use *only* your own lists, set `replaceDefaultRedaction: true` in the `apiLog` option (the same switch as for apiLog; it also drops the default headers and query parameters). Dangerous: a list you leave out then masks nothing.
 
 **Strict CI:** `redact: { fillValues: 'always' }` masks every typed value (`'never'` masks none; `redact.values` still applies).
 
-**Query strings.** Only learned and configured values are masked in URLs; there is still no masking by query-parameter name. A token the page puts in a URL that the test never typed or configured needs `redact.values`.
+**Query strings.** Sensitive query parameters are masked by name in every URL browserLog prints (see *URLs* above). A secret the page puts in a URL under another parameter name needs `redact.queryParams` or `redact.values`. Response bodies that echo a query, and notes you write yourself, are outside the logger's reach.
 
 **`inspectInputType` (opt-in).** A password field whose selector, label and placeholder give no hint (`locator('#field7')` for `<input type=password>`) is not detected by the heuristics. With `redact: { inspectInputType: true }` the logger asks the page once per field (`type=password`, sensitive `autocomplete`) after a fill succeeds, and masks the value when the answer is yes, when the probe fails, or when the fill itself failed. The cost is one extra round trip per distinct field, and the probe shows up as an `evaluate` step in traces and the HTML report. It is off by default; the entry for such a fill appears once the probe has answered. If the test ends before the probe answers, the fill is reported as completed (it did complete) with the value still masked, because its sensitivity is unknown.
 
@@ -440,9 +440,10 @@ An option set to `undefined` uses its default. An unknown option or an invalid v
 | --- | --- | --- | --- |
 | `mask` | `string` | `'***'` | Replacement for masked values. |
 | `fillValues` | `'auto' \| 'always' \| 'never'` | `'auto'` | Masking of typed values. |
-| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description (strings: case-insensitive substrings). Replaces the default list; spread the default to extend it. |
+| `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description (strings: case-insensitive substrings). Added to the defaults; apiLog's `replaceDefaultRedaction: true` replaces them. |
 | `values` | `string[]` | `[]` | Literal secrets masked everywhere (plus the ones collected automatically). |
-| `keys` | `(string \| RegExp)[]` | sensitive keys | Object keys masked inside arguments. |
+| `keys` | `(string \| RegExp)[]` | sensitive keys | Object keys masked inside arguments. Added to the defaults; apiLog's `replaceDefaultRedaction: true` replaces them. |
+| `queryParams` | `string[]` | apiLog's resolved list | Extra query-parameter names masked in printed URLs, added to apiLog's `redactQueryParams` (defaults included). |
 | `headers` | `string[]` | apiLog's resolved list | Extra header names, added to apiLog's `redactHeaders` (defaults included). |
 | `inspectInputType` | `boolean` | `false` | Opt-in DOM probe, see above. |
 
@@ -474,7 +475,6 @@ Before 1.48 `test.step` records the direct caller as the step location, which wo
 
 - `expect()` assertion logging
 - `page.request` / `context.request` traffic
-- Query-string redaction for browserLog
 - Opt-in body-key redaction defaults for apiLog (its request bodies can contain `password` fields today; see `DEFAULT_SENSITIVE_KEYS`)
 
 ## License

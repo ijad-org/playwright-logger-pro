@@ -15,7 +15,7 @@ const TOP_KEYS = new Set([
   'fileFormat', 'fileDir', 'sink',
 ]);
 
-const REDACT_KEYS = new Set(['mask', 'fillValues', 'selectors', 'values', 'keys', 'headers', 'inspectInputType']);
+const REDACT_KEYS = new Set(['mask', 'fillValues', 'selectors', 'values', 'keys', 'headers', 'queryParams', 'inspectInputType']);
 
 interface Rule {
   expected: string;
@@ -157,7 +157,7 @@ export function validateBrowserConfig(config: unknown): BrowserLoggerConfig {
         const kept = list(`redact.${key}`, rawRedact[key], isStrOrRegExp, 'strings or regular expressions', 'the defaults');
         if (kept) redact[key] = kept;
       }
-      for (const key of ['values', 'headers'] as const) {
+      for (const key of ['values', 'headers', 'queryParams'] as const) {
         if (rawRedact[key] === undefined) continue;
         const kept = list(`redact.${key}`, rawRedact[key], isStr, 'strings', key === 'values' ? 'no values' : 'the defaults');
         if (kept) redact[key] = kept;

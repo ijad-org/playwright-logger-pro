@@ -39,10 +39,10 @@ test('user options replace defaults; undefined never overrides', () => {
   assert.equal(c.colors, false);
 });
 
-test('redact is merged one level deep with the defaults', () => {
+test('redact is merged one level deep with the defaults; selectors and keys add to them', () => {
   const c = resolveBrowserConfig({ redact: { mask: '[x]', selectors: ['#pin-pad'] } });
   assert.equal(c.redact.mask, '[x]');
-  assert.deepEqual(c.redact.selectors, ['#pin-pad']);
+  assert.deepEqual(c.redact.selectors, [...DEFAULT_BROWSER_CONFIG.redact.selectors, '#pin-pad']);
   assert.deepEqual(c.redact.keys, [...DEFAULT_SENSITIVE_KEY_PATTERNS]);
   assert.equal(c.redact.fillValues, 'auto');
 });
@@ -69,9 +69,8 @@ test('headers: apiLog resolved list (defaults + extras) plus browserLog extras; 
   assert.deepEqual(replaced.redact.headers, ['x-only']);
 });
 
-test('browserLog has no query-string redaction yet; colors use the shared detector', () => {
+test('colors use the shared detector', () => {
   const c = resolveBrowserConfig();
-  assert.ok(!('query' in c.redact));
   assert.equal(c.colors, detectColorSupport());
   assert.equal(resolveBrowserConfig({ colors: true }).colors, true);
 });
