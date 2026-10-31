@@ -10,7 +10,8 @@ let ports = 0;
 
 function run(workers: number, env: Record<string, string | undefined>, options: Record<string, unknown> = {}) {
   const port = 21000 + ((process.pid * 3 + ports++ * 17) % 4000);
-  const r = spawnSync(path.join(root, 'node_modules', '.bin', 'playwright'), [
+  const bin = process.env.PLP_PLAYWRIGHT_BIN || path.join(root, 'node_modules', '.bin', 'playwright');
+  const r = spawnSync(bin, [
     'test', '-c', path.join(root, 'e2e', 'reporter', 'playwright.config.ts'),
   ], {
     cwd: root,
@@ -25,6 +26,8 @@ function run(workers: number, env: Record<string, string | undefined>, options: 
       ...env,
     } as NodeJS.ProcessEnv,
   });
+  // A failed spawn (no such binary, timeout) must not look like empty output.
+  if (r.error || typeof r.stdout !== 'string') throw new Error(`could not run ${bin}: ${r.error?.message ?? 'no output'}`);
   return { output: r.stdout, status: r.status };
 }
 

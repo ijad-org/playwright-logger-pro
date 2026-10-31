@@ -24,7 +24,7 @@ Masked by default, in the logged URL, headers, bodies **and** the curl:
 All matching is case-insensitive; body keys match at any depth.
 
 - **Add to the defaults** with `redactHeaders`, `redactQueryParams` and `redactBodyKeys`. Your lists are merged with the built-in ones (without duplicates), so adding `x-internal-token` keeps `authorization` redacted.
-- **Opt in to body masking** per key. To start from the shared sensitive-key list: `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
+- **Mask more body keys** by listing them. To also use the broader shared sensitive-key list: `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
 - **Replace the defaults** only if you must: `replaceDefaultRedaction: true` means *only* your lists are used and a list you leave out redacts nothing.
 
 ```ts
@@ -44,7 +44,7 @@ With `replaceDefaultRedaction: true`, anything not in your lists is printed in c
 
 The curl printed on the console contains the literal text `***`. Replace it with the real value before replaying. The compact `curl*.sh` scripts instead hold a `${VAR}` placeholder with a guard for each masked value: `export` the variables, then run `bash curl.sh`. The `curl.sh` file and its report attachment are built by the same code with the same lists, are never coloured, and there is no setting that writes unredacted values. They do not contain the test title, and the console notice names no path (the output folder is named after the title).
 
-`redactBodyKeys` is **empty by default**, so no body value is masked until you configure it for the keys of your API. It masks JSON and form keys and multipart field names only: XML and other raw text bodies are not scrubbed. Playwright's own HTML report step titles show the full URL of every `request.get(...)` call, query string included, and the logger cannot mask them (see [Known limits](#known-limits)).
+`redactBodyKeys` has built-in defaults (`DEFAULT_REDACT_BODY_KEYS`: `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin` and the snake_case spellings `access_token`, `refresh_token`, `api_key`, `card_number`), and your keys are added to them. Other keys of your API are masked only once you list them. It masks JSON and form keys and multipart field names only: XML and other raw text bodies are not scrubbed. Playwright's own HTML report step titles show the full URL of every `request.get(...)` call, query string included, and the logger cannot mask them (see [Known limits](#known-limits)).
 
 Masking covers what the logger sees: the URL, headers, bodies, curl and attachments. Playwright's own error output, including the source-code excerpt it prints around a failing line, shows your test source as written, so a secret hard-coded in a test file can appear there. Keep secrets in environment variables.
 
@@ -65,7 +65,7 @@ What is masked in the browser log:
 
 When a masked call fails, its secret is also removed from the logged error message, since Playwright's call log can echo arguments.
 
-One sensitive-key list serves both loggers: `DEFAULT_SENSITIVE_KEYS` is the default for browserLog's `redact.keys`, and your own `redact.keys` are added to it. apiLog still redacts no body keys by default; to use the shared list there, pass `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
+One sensitive-key list serves both loggers: `DEFAULT_SENSITIVE_KEYS` is the default for browserLog's `redact.keys`, and your own `redact.keys` are added to it. apiLog masks only the shorter `DEFAULT_REDACT_BODY_KEYS` by default; to use the shared list there, pass `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
 
 ### Which spellings are masked {#spellings}
 

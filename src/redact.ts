@@ -150,8 +150,8 @@ export const MIN_SECRET_LENGTH = 4;
  * Key / field names that usually hold secrets, shared by both loggers
  * (lower case). browserLog uses it to mask object keys inside arguments and to
  * recognise password-like selectors and labels (so `fill()` values are
- * masked). apiLog does NOT apply it by default (DEFAULT_REDACT_BODY_KEYS stays
- * empty); opt in with `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
+ * masked). apiLog does NOT apply it by default (it masks the shorter
+ * DEFAULT_REDACT_BODY_KEYS); opt in with `redactBodyKeys: [...DEFAULT_SENSITIVE_KEYS]`.
  * apiLog compares whole key names; browserLog also matches them inside longer
  * names (`userPassword`) and inside selectors.
  */
