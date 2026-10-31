@@ -88,7 +88,7 @@ function logged(
     context: APIRequestContext = ctx,
 ) {
   const lines: string[] = [];
-  const api = wrapRequestContext(context, {
+  const api = wrapRequestContext(context, { format: 'verbose',
     colors: false, curl: true, baseURL, ...config, sink: (l) => lines.push(l),
   });
   return { api, lines };
@@ -145,17 +145,21 @@ describe('PCL-19: custom redaction lists are merged with the defaults', () => {
       redactQueryParams: ['TOKEN', 'sig'],
       redactBodyKeys: ['password', 'Password'],
     });
-    assert.deepEqual(cfg.redactHeaders, ['authorization', 'cookie', 'set-cookie', 'x-api-key', 'X-Internal-Token']);
-    assert.deepEqual(cfg.redactQueryParams,
-        ['api_key', 'apikey', 'token', 'access_token', 'password', 'secret', 'sig']);
-    assert.deepEqual(cfg.redactBodyKeys, ['password']);
+    assert.deepEqual(cfg.redactHeaders, [...pkg.DEFAULT_REDACT_HEADERS, 'X-Internal-Token']);
+    assert.deepEqual(cfg.redactQueryParams, [...pkg.DEFAULT_REDACT_QUERY_PARAMS]); // sig is a default
+    assert.deepEqual(cfg.redactBodyKeys, [...pkg.DEFAULT_REDACT_BODY_KEYS]); // so is password
   });
 
   test('PCL-19 the defaults are exported from the package entry', () => {
-    assert.deepEqual([...pkg.DEFAULT_REDACT_HEADERS], ['authorization', 'cookie', 'set-cookie', 'x-api-key']);
-    assert.deepEqual([...pkg.DEFAULT_REDACT_QUERY_PARAMS],
-        ['api_key', 'apikey', 'token', 'access_token', 'password', 'secret']);
-    assert.deepEqual([...pkg.DEFAULT_REDACT_BODY_KEYS], []);
+    assert.deepEqual([...pkg.DEFAULT_REDACT_HEADERS],
+        ['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token']);
+    assert.deepEqual([...pkg.DEFAULT_REDACT_QUERY_PARAMS], [
+      'api_key', 'apikey', 'token', 'access_token', 'refresh_token', 'key', 'password', 'secret', 'signature', 'sig',
+    ]);
+    assert.deepEqual([...pkg.DEFAULT_REDACT_BODY_KEYS], [
+      'password', 'token', 'accessToken', 'refreshToken', 'secret', 'apiKey', 'cardToken', 'cardNumber', 'cvv', 'pin',
+      'access_token', 'refresh_token', 'api_key', 'card_number',
+    ]);
     for (const list of [pkg.DEFAULT_REDACT_HEADERS, pkg.DEFAULT_REDACT_QUERY_PARAMS]) {
       assert.throws(() => (list as string[]).push('x'), TypeError);
     }
@@ -472,16 +476,19 @@ describe('PCL-23: invalid options warn once and fall back to the defaults', () =
     assert.deepEqual(warnings, []);
   });
 
-  test('PCL-23 unknown curl values fall back to false (no curl) with a warning', async () => {
+  test('PCL-23 unknown curl values fall back to the default with a warning', async () => {
     const warnings = await withWarnings(async () => {
-      assert.equal(resolveConfig({ curl: 'always' as never }).curl, false);
-      assert.equal(resolveConfig({ curl: 1 as never }).curl, false);
+      assert.equal(resolveConfig({ curl: 'sometimes' as never }).curl, '5xx');
+      assert.equal(resolveConfig({ curl: 1 as never }).curl, '5xx');
       assert.equal(resolveConfig({ curl: 'on-failure' }).curl, 'on-failure');
-      const { api, lines } = logged({ curl: 'always' as never });
+      assert.equal(resolveConfig({ curl: 'always' }).curl, 'always');
+      // verbose keeps the 0.3 default: no curl
+      assert.equal(resolveConfig({ format: 'verbose', curl: 'sometimes' as never }).curl, false);
+      const { api, lines } = logged({ format: 'verbose', curl: 'sometimes' as never });
       await api.get('/echo');
       assert.ok(!lines.some((l) => l.startsWith('curl')));
     });
-    assert.ok(warnings.some((w) => /curl.*'on-failure'.*"always"/.test(w)), warnings.join('\n'));
+    assert.ok(warnings.some((w) => /curl.*'on-failure'.*"sometimes"/.test(w)), warnings.join('\n'));
   });
 
   test('PCL-23 other options of the wrong type and unknown options warn', async () => {
@@ -511,7 +518,7 @@ describe('PCL-23: invalid options warn once and fall back to the defaults', () =
 
   test('PCL-23 each warning is printed once per process', async () => {
     const warnings = await withWarnings(() => {
-      for (let i = 0; i < 5; i++) resolveConfig({ curl: 'always' as never });
+      for (let i = 0; i < 5; i++) resolveConfig({ curl: 'sometimes' as never });
     });
     assert.equal(warnings.length, 1);
   });
@@ -521,7 +528,7 @@ describe('PCL-23: invalid options warn once and fall back to the defaults', () =
     const log = mock.method(console, 'log', (line: string) => printed.push(line));
     try {
       const warnings = await withWarnings(async () => {
-        const api = wrapRequestContext(ctx, {
+        const api = wrapRequestContext(ctx, { format: 'verbose',
           colors: false, curl: true, baseURL, sink: () => {
             throw new Error('sink boom');
           },

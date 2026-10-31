@@ -11,12 +11,14 @@ slug: /intro
 
 Playwright Logger Pro makes the output of your Playwright tests readable when something goes wrong. It adds two loggers to the `test` you already use:
 
-- **API logging** prints every `request.get/post/put/patch/delete/head/fetch` call with its status, timing, headers and body, and can print a `curl` command that replays the request.
+- **API logging** prints one line for every `request.get/post/put/patch/delete/head/fetch` call, and a detail block (with a `curl` that replays the request) under the ones that failed. See [Compact output](./compact-output.mdx).
 - **Browser logging** records what a test did in the page (clicks, fills, navigations, console messages, page errors, dialogs, downloads, `test.step` boundaries). It stays quiet while the test passes, and prints one timeline and attaches it to the report when the test fails.
 
 Secrets are masked in both: authorization headers, cookies, token-like query parameters and password fields never reach your logs by default.
 
-<TerminalOutput sample="api-post" title="API logging: a POST with curl: true" />
+<TerminalOutput sample="api-compact" title="API logging: one line per call, detail where a test failed" />
+
+Register the reporter after `list`: `reporter: [['list'], ['playwright-logger-pro/reporter']]`. The 0.3 line-by-line output is still there as `apiLog: { format: 'verbose' }`.
 
 ## Quick start (2 minutes)
 

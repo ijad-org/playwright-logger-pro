@@ -9,10 +9,10 @@ export default tseslint.config(
   tseslint.configs.recommended,
   {
     // Plain Node scripts, the e2e server and the meta reporter (no TypeScript, no bundler).
-    files: ['scripts/**/*.mjs', 'scripts/**/*.cjs', 'e2e/**/*.mjs', 'e2e/**/*.cjs'],
+    files: ['scripts/**/*.mjs', 'scripts/**/*.cjs', 'e2e/**/*.mjs', 'e2e/**/*.cjs', 'demo/**/*.mjs'],
     languageOptions: {
       globals: {
-        process: 'readonly', console: 'readonly', URL: 'readonly', require: 'readonly',
+        process: 'readonly', console: 'readonly', URL: 'readonly', require: 'readonly', setTimeout: 'readonly',
         module: 'writable', __dirname: 'readonly',
       },
     },

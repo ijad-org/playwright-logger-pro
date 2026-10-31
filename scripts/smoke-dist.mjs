@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import * as main from 'playwright-logger-pro';
 import * as fixtures from 'playwright-logger-pro/fixtures';
+import reporter from 'playwright-logger-pro/reporter';
 
 for (const name of [
   'wrapRequestContext', 'buildCurl', 'resolveConfig', 'DEFAULT_CONFIG', 'redactUrl',
@@ -14,6 +15,7 @@ for (const name of [
 assert.equal(typeof fixtures.test, 'function', 'fixtures: test');
 assert.equal(typeof fixtures.test.step, 'function', 'fixtures: test.step');
 assert.notEqual(fixtures.expect, undefined, 'fixtures: expect');
+assert.equal(typeof reporter, 'function', 'reporter: default export');
 
 // A CJS copy and this ESM copy share one registry: loading both must not double patch.
 const cjs = createRequire(import.meta.url)('playwright-logger-pro');

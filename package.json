@@ -1,6 +1,6 @@
 {
   "name": "playwright-logger-pro",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Playwright logger for API and browser actions: colourful APIRequestContext logs with curl output, a per-test browser timeline, and secret redaction",
   "author": "Shahul Hameed M Y (https://linkedin.com/in/shahulhameedmy)",
   "license": "MIT",
@@ -44,6 +44,9 @@
     "*": {
       "fixtures": [
         "./dist/fixtures.d.ts"
+      ],
+      "reporter": [
+        "./dist/reporter.d.ts"
       ]
     }
   },
@@ -57,6 +60,11 @@
       "types": "./dist/fixtures.d.ts",
       "import": "./dist/fixtures.mjs",
       "require": "./dist/fixtures.js"
+    },
+    "./reporter": {
+      "types": "./dist/reporter.d.ts",
+      "import": "./dist/reporter.mjs",
+      "require": "./dist/reporter.js"
     },
     "./package.json": "./package.json"
   },
@@ -88,7 +96,9 @@
     "test:e2e:dist": "PLP_E2E_FROM=dist playwright test -c e2e/playwright.config.ts",
     "perf": "node scripts/perf.mjs",
     "drift": "tsx scripts/check-prototype-drift.ts",
-    "contrast": "tsx scripts/curl-contrast.mjs"
+    "contrast": "tsx scripts/curl-contrast.mjs",
+    "demo": "playwright test -c demo/playwright.config.ts",
+    "screenshots": "node scripts/render-screenshots.mjs"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.30.0"

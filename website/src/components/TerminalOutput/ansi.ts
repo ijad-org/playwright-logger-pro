@@ -61,8 +61,11 @@ function classes(s: State): string {
 
 /** Inverse swaps the foreground and background, with the terminal's own colours for the default ones. */
 function style(s: State): Span['style'] {
-  const color = s.inverse ? (s.bg ?? 'var(--ansi-bg)') : s.fg;
+  let color = s.inverse ? (s.bg ?? 'var(--ansi-bg)') : s.fg;
   const background = s.inverse ? (s.fg ?? 'var(--ansi-fg)') : s.bg;
+  // Black text (30) is the panel's grey on its own; on a coloured background (a status chip) it must
+  // be the panel's black or the text vanishes.
+  if (!s.inverse && s.bg && color === BASIC[0]) color = 'var(--ansi-bg)';
   if (!color && !background) return undefined;
   return {...(color && {color}), ...(background && {background})};
 }

@@ -44,7 +44,7 @@ The printed **curl** is stricter: plain in CI, under `NO_COLOR` and `TERM=dumb`,
 ## The curl does not replay
 
 - **Windows shells**: curl output is for POSIX shells (bash, zsh, sh, Git Bash, WSL). In PowerShell, quoting differs and `\` line continuation does not work.
-- **`***` in the command**: those values were redacted. Put the real value back.
+- **`***` in the command**: those values were redacted. Put the real value back. A compact `curl.sh` has `${VAR}` placeholders instead: `export` the variables it names (it stops with `export TOKEN first` if one is missing), then run `bash curl.sh`.
 - **Multipart files**: file parts are read from disk (`-F 'name=@file'`). Put the file next to where you run curl, as the comment in the curl says.
 - **Binary body**: save the bytes as `request-body.bin` first.
 - **Cookies**: cookies set by the response itself are not included; only those in the cookie jar before the request.

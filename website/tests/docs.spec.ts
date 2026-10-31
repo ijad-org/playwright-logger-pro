@@ -20,7 +20,7 @@ test.describe('terminal sample', () => {
   };
 
   for (const theme of ['light', 'dark']) {
-    test(`home hero shows the curl command coloured on a dark panel (${theme} theme)`, async ({ page }) => {
+    test(`home hero shows the compact output with its 500 detail block on a dark panel (${theme} theme)`, async ({ page }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), theme);
       await page.goto('./');
       const terminal = page.locator('figure', { hasText: 'curl -X POST' });
@@ -29,13 +29,52 @@ test.describe('terminal sample', () => {
 
       const code = terminal.locator('code');
       await expect(code).not.toContainText('\u001b');
-      await expect(code).not.toContainText('[38;5;');
-      const colour = (text: string) => code.locator('span', { hasText: new RegExp(`^${text}$`) });
-      await expect(colour('POST').last()).toHaveCSS('color', rgb('#00875f'));
-      await expect(colour('http://localhost:3000/vegetables').last()).toHaveCSS('color', rgb('#5f5fff'));
-      await expect(colour('Content-Type').last()).toHaveCSS('color', rgb('#d700af'));
+      await expect(code).toContainText('← 500 Internal Server Error  {"error":"payment gateway timeout"}');
+      await expect(code).toContainText('↳ replay: curl.sh attached to the HTML report');
+      await expect(code).toContainText('8 requests · 2 errors · 1 slow ≥1s');
+      const span = (text: string) => code.locator('span', { hasText: new RegExp(`^${text}$`) });
+      // chips: black text on yellow for the 404, white on red for the 500, no extra characters
+      await expect(span('404').first()).toHaveCSS('background-color', rgb('#facc15'));
+      await expect(span('404').first()).toHaveCSS('color', rgb('#000000'));
+      await expect(span('500').first()).toHaveCSS('background-color', rgb('#f87171'));
+      await expect(span('500').first()).toHaveCSS('color', rgb('#ffffff'));
+      // the masked values
+      await expect(span('\\*\\*\\*').first()).toHaveCSS('background-color', rgb('#7f7f7f'));
     });
   }
+});
+
+test.describe('hero terminal is not clipped', () => {
+  for (const width of [1280, 1400, 1920]) {
+    test(`at ${width}px the whole compact output fits in the hero panel`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('./');
+      const terminal = page.locator('figure', { hasText: 'curl -X POST' });
+      const pre = terminal.locator('pre');
+      await expect(pre).toBeVisible();
+      await expect(pre).toHaveCSS('overflow-x', 'auto');
+      await expect(pre).toHaveCSS('white-space', 'pre');
+      const code = terminal.locator('code');
+      await expect(code).toContainText("│ curl -X POST 'https://api.shop.test/v1/checkout?token=***&currency=EUR' \\");
+      await expect(code).toContainText('POST   500  https://api.shop.test/v1/checkout?token=***&currency=EUR   ▲ 1.83s');
+      const m = await pre.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+      expect(m.scroll, `scrollWidth ${m.scroll} > clientWidth ${m.client}`).toBeLessThanOrEqual(m.client);
+      // the panel itself is inside the viewport
+      const box = (await terminal.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    });
+  }
+
+  test('on a narrow screen lines never wrap and the panel scrolls horizontally', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('./');
+    const pre = page.locator('figure', { hasText: 'curl -X POST' }).locator('pre');
+    await expect(pre).toHaveCSS('overflow-x', 'auto');
+    await expect(pre).toHaveCSS('white-space', 'pre');
+    const m = await pre.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(m.scroll).toBeGreaterThan(m.client);
+  });
 });
 
 test.describe('search', () => {

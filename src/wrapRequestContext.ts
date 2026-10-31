@@ -5,12 +5,22 @@ import { buildCurl } from './curl';
 import { cookieHeaderFor, type StoredCookie } from './cookies';
 import {
   describeResponseBody,
+  escapeControlChars,
   formatBody,
   formatErrorLine,
   formatHeaders,
   formatRequestLine,
   formatResponseLine,
+  stringifyBody,
+  truncateBody,
 } from './format';
+import { captureBody, describeError, maskHeaders, renderOptionsOf } from './compact/capture';
+import { buildCurlParts } from './compact/curlScript';
+import { wantsCurl } from './compact/options';
+import { renderCalls } from './compact/render';
+import { isErrorCall } from './compact/types';
+import type { CallRecord } from './compact/types';
+import { warnOnce } from './warn';
 import { describeMultipart } from './multipart';
 import { detectPlaywrightVersion } from './playwrightVersion';
 import { readRedirectChain } from './redirects';
@@ -114,19 +124,30 @@ function isHttpMethod(prop: string | symbol): prop is HttpMethod {
   return typeof prop === 'string' && (HTTP_METHODS as readonly string[]).includes(prop);
 }
 
+/** One finished call for the `test` fixture: the record and, when it asks for one, its `curl.sh` content. */
+export interface CompactCall {
+  record: CallRecord;
+  script?: string;
+}
+
 /** Hooks for the `test` fixture; not part of the public API. */
 export interface WrapInternals {
   /**
-   * Called with each curl command in its plain form (no colours, same redaction),
-   * for the `curl.sh` file. Not called with `curlFormat.file: false`.
+   * `format: 'verbose'`: called with each curl command in its plain form (no colours, same
+   * redaction), for the `curl.sh` file. Not called with `curlFormat.file: false`.
    */
   onCurl?: (plain: string) => void;
+  /**
+   * `format: 'compact'`: called with every finished call instead of printing it. Without it the
+   * wrapper prints the call itself (request line, and the detail block of a failed call).
+   */
+  onCall?: (call: CompactCall) => void;
 }
 
 /**
- * Wrap a Playwright APIRequestContext so every request logs a colorful
- * request/response summary (and optionally the equivalent curl command)
- * before delegating to the real context. Non-HTTP members (dispose,
+ * Wrap a Playwright APIRequestContext so every request logs a compact summary line (or, with
+ * `format: 'verbose'`, a colorful request/response summary) and optionally the equivalent curl
+ * command before delegating to the real context. Non-HTTP members (dispose,
  * storageState, ...) pass through untouched.
  */
 export function wrapRequestContext(
@@ -139,6 +160,8 @@ export function wrapRequestContext(
   ensureStackHygiene();
 
   const log = cfg.sink;
+  const verbose = cfg.format === 'verbose';
+  const curlOff = cfg.curl === false || cfg.curl === 'never';
 
   async function loggedCall(
       method: HttpMethod,
@@ -153,27 +176,27 @@ export function wrapRequestContext(
     const contentType = headerValue(headers, 'content-type');
     const redactedUrl = (u: string) => redactUrl(u, cfg.redactQueryParams);
 
-    log(formatRequestLine(httpVerb, redactedUrl(withParams(url, options?.params)), cfg));
-    if (cfg.logHeaders && Object.keys(headers).length > 0) {
-      log(formatHeaders(headers, cfg));
+    if (verbose) {
+      log(formatRequestLine(httpVerb, redactedUrl(withParams(url, options?.params)), cfg));
+      if (cfg.logHeaders && Object.keys(headers).length > 0) {
+        log(formatHeaders(headers, cfg));
+      }
     }
-    if (cfg.logBody) {
-      const data = typeof options?.data === 'string' ?
-        redactBodyString(options.data, cfg.redactBodyKeys, contentType) :
-        redactBodyValue(options?.data, cfg.redactBodyKeys);
-      const body = formatBody(
-          data ?? redactBodyValue(options?.form, cfg.redactBodyKeys) ??
-          describeMultipart(options?.multipart, cfg.redactBodyKeys),
-          cfg,
-      );
+    const maskedData = typeof options?.data === 'string' ?
+      redactBodyString(options.data, cfg.redactBodyKeys, contentType) :
+      redactBodyValue(options?.data, cfg.redactBodyKeys);
+    const maskedBody = maskedData ?? redactBodyValue(options?.form, cfg.redactBodyKeys) ??
+      describeMultipart(options?.multipart, cfg.redactBodyKeys);
+    if (verbose && cfg.logBody) {
+      const body = formatBody(maskedBody, cfg);
       if (body !== undefined) log(body);
     }
 
     // Cookies the context sends implicitly, for the curl. Always read before
     // the request: afterwards the jar also holds the cookies the response set,
     // which the request never sent.
-    const cookiesBefore = cfg.curl !== false ? await readCookies(context) : undefined;
-    const printCurl = async (
+    const cookiesBefore = !curlOff ? await readCookies(context) : undefined;
+    const requestInfo = (
         requestedUrl: string,
         followRedirects: boolean,
         redirects?: RedirectHop[],
@@ -181,7 +204,7 @@ export function wrapRequestContext(
       const cookie = headerValue(headers, 'cookie') === undefined && cookiesBefore ?
         cookieHeaderFor(requestedUrl, cookiesBefore) :
         undefined;
-      const info = {
+      return {
         method: httpVerb,
         url: requestedUrl,
         headers: cookie ? { ...headers, Cookie: cookie } : headers,
@@ -193,6 +216,13 @@ export function wrapRequestContext(
         cookieFromJar: cookie !== undefined,
         playwrightVersion: redirects ? detectPlaywrightVersion() : undefined,
       };
+    };
+    const printCurl = async (
+        requestedUrl: string,
+        followRedirects: boolean,
+        redirects?: RedirectHop[],
+    ) => {
+      const info = requestInfo(requestedUrl, followRedirects, redirects);
       const curlOptions = {
         redactQueryParams: cfg.redactQueryParams,
         redactBodyKeys: cfg.redactBodyKeys,
@@ -208,6 +238,58 @@ export function wrapRequestContext(
       }
     };
 
+    /** Compact: the record of a finished call, with its curl when the options ask for one. */
+    const finish = async (
+        base: Pick<CallRecord, 'status' | 'statusText' | 'durationMs' | 'error' | 'redirectedTo'>,
+        requestedUrl: string,
+        followRedirects: boolean,
+        response?: APIResponse,
+    ): Promise<void> => {
+      try {
+        const record: CallRecord = {
+          method: httpVerb.toUpperCase(),
+          url: redactedUrl(requestedUrl),
+          ...base,
+        };
+        if (cfg.logHeaders) {
+          record.requestHeaders = maskHeaders(headers, cfg);
+          if (response) record.responseHeaders = maskHeaders(response.headers(), cfg);
+        }
+        if (cfg.logBody) {
+          const text = stringifyBody(maskedBody);
+          if (text !== undefined) record.requestBody = truncateBody(escapeControlChars(text), cfg.maxBodyLength);
+          if (response) {
+            try {
+              record.responseBody = captureBody(await response.body(), response.headers()['content-type'], cfg.redactBodyKeys);
+            } catch {
+              // body may not be readable (e.g. disposed context) — never fail the test for logging
+            }
+          }
+        }
+        let script: string | undefined;
+        if (!curlOff && (isErrorCall(record) || wantsCurl(cfg.curl, record.status))) {
+          const chain = followRedirects && response ? await readRedirectChain(response) : undefined;
+          const parts = buildCurlParts(requestInfo(requestedUrl, followRedirects, chain), {
+            redactHeaders: cfg.redactHeaders,
+            redactQueryParams: cfg.redactQueryParams,
+            redactBodyKeys: cfg.redactBodyKeys,
+            multiline: cfg.curlFormat.multiline,
+          });
+          record.curl = parts.terminal;
+          if (wantsCurl(cfg.curl, record.status) && cfg.curlFormat.file) script = parts.script;
+        }
+        if (internals.onCall) {
+          internals.onCall({ record, script });
+        } else {
+          // No test to ask whether it failed: show the detail of every failed call.
+          const width = process.stdout.columns || 120;
+          log(renderCalls([record], renderOptionsOf(cfg, cfg.curlFormat.colors, width), true).join('\n'));
+        }
+      } catch (error) {
+        warnOnce(`could not record an API call: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
     const started = Date.now();
     let response: APIResponse;
     try {
@@ -217,8 +299,15 @@ export function wrapRequestContext(
     } catch (error) {
       const requestedUrl = resolveRequestedUrl(url, options?.params, cfg.baseURL, undefined) ??
         withParams(url, options?.params);
-      log(formatErrorLine(httpVerb, redactedUrl(requestedUrl), error, Date.now() - started, cfg));
-      if (cfg.curl !== false) await printCurl(requestedUrl, false);
+      if (verbose) {
+        log(formatErrorLine(httpVerb, redactedUrl(requestedUrl), error, Date.now() - started, cfg));
+        if (wantsCurl(cfg.curl, undefined)) await printCurl(requestedUrl, false);
+      } else {
+        await finish({
+          durationMs: Date.now() - started,
+          error: describeError(error, cfg.redactQueryParams),
+        }, requestedUrl, false);
+      }
       throw error;
     }
     const durationMs = Date.now() - started;
@@ -229,6 +318,16 @@ export function wrapRequestContext(
     const requestedUrl =
       resolveRequestedUrl(url, options?.params, cfg.baseURL, finalUrl) ?? finalUrl;
     const redirected = normalizeUrl(requestedUrl) !== normalizeUrl(finalUrl);
+
+    if (!verbose) {
+      await finish({
+        status: response.status(),
+        statusText: response.statusText(),
+        durationMs,
+        redirectedTo: redirected ? redactedUrl(finalUrl) : undefined,
+      }, requestedUrl, redirected, response);
+      return response;
+    }
 
     log(formatResponseLine(
         httpVerb, redactedUrl(requestedUrl), response.status(), response.statusText(), durationMs,
@@ -249,7 +348,7 @@ export function wrapRequestContext(
       }
     }
 
-    if (cfg.curl === true || (cfg.curl === 'on-failure' && !response.ok())) {
+    if (wantsCurl(cfg.curl, response.status())) {
       const chain = redirected ? await readRedirectChain(response) : undefined;
       await printCurl(requestedUrl, redirected, chain);
     }

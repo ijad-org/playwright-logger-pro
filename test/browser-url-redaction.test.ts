@@ -84,7 +84,8 @@ describe('PCL-47: query parameters are masked in browserLog URLs', () => {
   test('the key list is apiLog\'s: defaults, custom names add, replaceDefaultRedaction replaces', () => {
     assert.deepEqual(resolveBrowserConfig().redact.queryParams, [...DEFAULT_REDACT_QUERY_PARAMS]);
     const added = resolveBrowserConfig({ redact: { queryParams: ['sig'] } }, { apiLog: { redactQueryParams: ['code'] } });
-    assert.deepEqual(added.redact.queryParams, [...DEFAULT_REDACT_QUERY_PARAMS, 'code', 'sig']);
+    // 'sig' is a default since 0.4.0: merging it again adds nothing.
+    assert.deepEqual(added.redact.queryParams, [...DEFAULT_REDACT_QUERY_PARAMS, 'code']);
     const replaced = resolveBrowserConfig({}, { apiLog: { redactQueryParams: ['only'], replaceDefaultRedaction: true } });
     assert.deepEqual(replaced.redact.queryParams, ['only']);
 

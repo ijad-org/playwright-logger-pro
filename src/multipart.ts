@@ -1,4 +1,5 @@
 import { REDACTED } from './redact';
+import type { Mask } from './redact';
 
 /** One part of a multipart/form-data body, normalised for logging and curl. */
 export type MultipartPart =
@@ -65,6 +66,7 @@ function toPart(name: string, value: unknown): MultipartPart {
 export function multipartParts(
     multipart: unknown,
     redactKeys: readonly string[] = [],
+    mask: Mask = REDACTED,
 ): MultipartPart[] | undefined {
   if (multipart === undefined || multipart === null) return undefined;
   let entries: Array<[string, unknown]>;
@@ -79,7 +81,7 @@ export function multipartParts(
   return entries.map(([name, value]) => {
     const part = toPart(name, value);
     return part.kind === 'field' && redacted.has(name.toLowerCase()) ?
-      { ...part, value: REDACTED } :
+      { ...part, value: typeof mask === 'function' ? mask(name) : mask } :
       part;
   });
 }

@@ -10,7 +10,7 @@ export default defineConfig({
   workers: 1,
   reporter: [[path.join(__dirname, 'reporter.cjs')]],
   outputDir: process.env.PLP_META_OUTPUT_DIR || path.join(__dirname, '..', '..', 'test-results', 'meta'),
-  use: { baseURL: `http://127.0.0.1:${PORT}`, trace: 'off', screenshot: 'off', video: 'off' },
+  use: { baseURL: `http://127.0.0.1:${PORT}`, ...({ apiLog: { format: 'verbose' } } as Record<string, unknown>), trace: 'off', screenshot: 'off', video: 'off' },
   webServer: {
     command: 'node server.mjs',
     cwd: path.join(__dirname, '..'),

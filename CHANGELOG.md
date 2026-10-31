@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0] - 2026-10-31
+
+### Added
+
+- **Compact output, the new default.** An API call prints one line: `METHOD STATUS  URL  TIMING`, host dimmed, masked values `***`, `▲ 1.83s` for a slow call, and a coloured chip for a 4xx (yellow), 5xx and network error (red, `ERR`). A request with status >= 400 or no response gets a `│` block directly under its line when its test failed: `← 404 Not Found  {body}` (one line, cut at `bodyPreviewChars`), and for 5xx and network errors the curl and `↳ replay: curl.sh attached to the HTML report`. A 404 in a passing test keeps its chip and gets no block. After Playwright's summary a total line: `8 requests · 2 errors · 1 slow ≥1s`.
+- **`playwright-logger-pro/reporter`.** Register it after `list`: `reporter: [['list'], ['playwright-logger-pro/reporter']]`. The `test` fixture records each call (masked) in a `playwright-logger-pro.json` attachment; the reporter, in the runner process, prints it under the test's result line. Printing from the workers cannot give that layout (their output comes before the result line and interleaves between parallel tests). Without the reporter the fixture prints the lines itself, above the result line.
+- **Terminal safety.** In a terminal the list reporter rewrites its result lines in place by row count, so extra lines printed while another test runs would garble them. The reporter holds its lines until no test is running and then prints them with a title line; with one worker, and without a terminal, nothing is held. Without colours the list reporter finishes lines on the next tick, so the reporter prints one `setImmediate` later. See *Ordering with the list reporter* in the README and the docs.
+- **New `apiLog` options** (also accepted by the reporter, except `format` and `mask`): `format` (`'compact'` | `'verbose'`), `slowThresholdMs` (1000), `timeColumn` (82 | `'auto'`), `details` (`'failed-tests'` | `'always'` | `'never'`), `bodyPreviewChars` (200), `theme` (`'ansi'` | `'dark'` | `'light'`), `ascii`, and `mask: { headers, query, bodyKeys }`. The reporter also takes `curl` and `colors`.
+- **`curl.sh` that is safe to share.** In compact output each failed call gets `curl.sh` (several: `curl-{n}-{METHOD}-{lastPathSegment}.sh`) with `#!/usr/bin/env bash`, `set -euo pipefail` and, for every masked value, a `"${NAME}"` placeholder (UPPER_SNAKE_CASE of its key: `${AUTHORIZATION}`, `${TOKEN}`, `${CARD_TOKEN}`) with a `: "${NAME:?export NAME first}"` guard. No secret is ever written. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. Headers curl adds itself (`host`, `content-length`, `connection`, `accept-encoding`) are left out.
+- **No-colour mode keeps failures visible**: the status column is 5 wide (` 200 `, `[404]`). `ascii: true` (automatic on legacy Windows consoles) uses `| <- ^ -> ok x`. Colours follow the 0.3 rules of `curlFormat.colors: 'auto'`: none on CI, with `NO_COLOR` or when piped; `FORCE_COLOR` alone does not colour them.
+- `npm run demo` (three tests against a mock shop API, the scenario of the screenshots) and `npm run screenshots` (renders the demo's real output to `docs/assets/compact-dark.png` and `compact-light.png`; `docs/assets` is not published to npm).
+- Exports: the pure renderer (`renderCalls`, `renderCallLine`, `renderDetail`, `renderFooter`, `summarize`, `formatDuration`, `shortenQuery`, `bodyPreview`), `buildCurlParts`, `envName`, and the types `CallRecord`, `CallsAttachment`, `CurlMode`, `DetailsMode`, `MaskConfig`, `OutputFormat`, `ThemeName`, `ReporterOptions`. `buildCurl()` options gain `mask`, `skipHeaders`, `truncationMarker` and `truncationNote`.
+
+### Changed
+
+- **Default output.** API calls print in the compact format instead of the line-by-line one. **Migration: set `apiLog: { format: 'verbose' }` to keep the 0.3 output exactly** (headers, bodies, response, curl, the `#!/bin/sh` `curl.sh` and its notice). `format: 'verbose'` defaults `curl` to `false`, as in 0.3.
+- **`curl`** also accepts `'5xx'` (the new default for compact), `'4xx+'`, `'always'` and `'never'`; `true`, `false` and `'on-failure'` keep working (`'always'`, `'never'`, `'4xx+'` in compact).
+- **`curlFormat` in compact:** `file: false` attaches no scripts, `multiline: false` puts the curl on one line, `colors` decides the colours of what the fixture prints without the reporter. `logBody: false` keeps bodies and the response preview out; `logHeaders: false` keeps headers out of the JSON attachment. `maxBodyLength` applies to verbose and to the JSON attachment.
+- **More is masked by default** (your own lists are merged with them; `replaceDefaultRedaction: true` still drops them): headers `proxy-authorization` and `x-auth-token`; query parameters `refresh_token`, `key`, `signature` and `sig`; and JSON/form body keys, which used to be empty: `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin` (and `access_token`, `refresh_token`, `api_key`, `card_number`). This also affects `format: 'verbose'`.
+- Tests with API calls get a `playwright-logger-pro.json` attachment (masked records).
+- Docs site: the home page shows the compact output with its 500 detail block (regenerate with `node website/scripts/gen-doc-samples.mjs`); new page *Compact output & the reporter*.
+
 ## [0.3.1] - 2026-10-31
 
 ### Changed

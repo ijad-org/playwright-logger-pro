@@ -69,6 +69,7 @@
   margin: 0;
   padding: 0.9rem 1rem;
   overflow-x: auto;
+  white-space: pre;
   background: transparent;
   color: inherit;
   font-family: var(--ifm-font-family-monospace);

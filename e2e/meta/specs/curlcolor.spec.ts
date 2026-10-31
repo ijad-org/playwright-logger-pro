@@ -8,21 +8,21 @@ async function send(request: import('@playwright/test').APIRequestContext): Prom
 }
 
 test.describe('auto', () => {
-  test.use({ apiLog: { curl: true } });
+  test.use({ apiLog: { format: 'verbose', curl: true } });
   test('curl color: auto', async ({ request }) => {
     await send(request);
   });
 });
 
 test.describe('top-level colors: true', () => {
-  test.use({ apiLog: { curl: true, colors: true } });
+  test.use({ apiLog: { format: 'verbose', curl: true, colors: true } });
   test('curl color: top-level colors true', async ({ request }) => {
     await send(request);
   });
 });
 
 test.describe('curlFormat.colors: true', () => {
-  test.use({ apiLog: { curl: true, curlFormat: { colors: true } } });
+  test.use({ apiLog: { format: 'verbose', curl: true, curlFormat: { colors: true } } });
   test('curl color: explicit curlFormat true', async ({ request }) => {
     await send(request);
   });

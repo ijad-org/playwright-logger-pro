@@ -1,6 +1,7 @@
 import { createColors } from 'picocolors';
 import type { ResolvedConfig } from './types';
-import { redactUrl } from './redact';
+import { maskFor, redactUrl } from './redact';
+import type { Mask } from './redact';
 import { curlColorizer } from './curlPalette';
 import type { CurlColorDepth } from './curlPalette';
 import { curlColorDepth } from './env';
@@ -110,12 +111,12 @@ export function palette(colors: boolean, depth?: CurlColorDepth): Palette {
 export function redactHeaders(
     headers: Record<string, string>,
     redactList: readonly string[],
-    mask: string = '***',
+    mask: Mask = '***',
 ): Record<string, string> {
   const lowered = redactList.map((h) => h.toLowerCase());
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    out[key] = lowered.includes(key.toLowerCase()) ? mask : value;
+    out[key] = lowered.includes(key.toLowerCase()) ? maskFor(mask, key) : value;
   }
   return out;
 }
@@ -164,6 +165,21 @@ const TEXT_CONTENT_TYPE =
   /^text\/|[/+](json|xml|javascript|ecmascript|x-www-form-urlencoded|graphql|yaml|x-yaml|csv)\b/i;
 
 /**
+ * The decoded text of a response body, or undefined when it is binary: a non-textual content
+ * type, or without a content type bytes that are not valid UTF-8 or contain NUL.
+ */
+export function decodeBody(body: Buffer, contentType?: string): string | undefined {
+  const type = contentType?.split(';')[0].trim();
+  if (type) return TEXT_CONTENT_TYPE.test(type) ? body.toString('utf8') : undefined;
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+    return text.includes('\u0000') ? undefined : text;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Text to log for a response body: the decoded text for textual content
  * types, a `<binary N bytes (type)>` placeholder otherwise. Without a
  * content type, bytes that are not valid UTF-8 or contain NUL count as binary.
@@ -171,14 +187,7 @@ const TEXT_CONTENT_TYPE =
 export function describeResponseBody(body: Buffer, contentType?: string): string {
   if (body.length === 0) return '';
   const type = contentType?.split(';')[0].trim();
-  const placeholder = `<binary ${body.length} bytes${type ? ` (${type})` : ''}>`;
-  if (type) return TEXT_CONTENT_TYPE.test(type) ? body.toString('utf8') : placeholder;
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
-    return text.includes('\u0000') ? placeholder : text;
-  } catch {
-    return placeholder;
-  }
+  return decodeBody(body, contentType) ?? `<binary ${body.length} bytes${type ? ` (${type})` : ''}>`;
 }
 
 export function stringifyBody(data: unknown): string | undefined {

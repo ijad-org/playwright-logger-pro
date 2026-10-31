@@ -13,6 +13,8 @@ const fixtures = require('playwright-logger-pro/fixtures');
 assert.equal(typeof fixtures.test, 'function', 'fixtures: test');
 assert.equal(typeof fixtures.test.step, 'function', 'fixtures: test.step');
 assert.notEqual(fixtures.expect, undefined, 'fixtures: expect');
+const reporter = require('playwright-logger-pro/reporter');
+assert.equal(typeof (reporter.default ?? reporter), 'function', 'reporter: default export');
 assert.equal(require('playwright-logger-pro/package.json').name, 'playwright-logger-pro');
 
 // The same disabled config resolves identically in both formats.

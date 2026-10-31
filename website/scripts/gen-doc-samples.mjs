@@ -1,11 +1,12 @@
 // Regenerates website/src/data/samples/*.ansi from real runs of the library (coloured output).
-// Manual: node website/scripts/gen-doc-samples.mjs   (needs the repository dependencies and Chromium)
+// Manual: node website/scripts/gen-doc-samples.mjs   (needs the repository dependencies; Chromium for the browser samples)
 // The host and the Date header are normalised; durations are whatever the run produced.
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runDemo } from '../../scripts/demo-output.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -31,3 +32,8 @@ for (const file of fs.readdirSync(tmp)) {
   fs.writeFileSync(path.join(out, file), text);
   console.log('wrote', path.relative(root, path.join(out, file)));
 }
+
+// The compact output (hero of the home page): the real output of `npm run demo`, 16 basic colours.
+const compact = path.join(out, 'api-compact.ansi');
+fs.writeFileSync(compact, runDemo());
+console.log('wrote', path.relative(root, compact));

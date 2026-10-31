@@ -42,14 +42,22 @@ Configures request logging for the `request` fixture and `wrapRequestContext()`.
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a transparent pass-through. |
 | `colors` | `boolean` | auto | `true`/`false` force ANSI colours on/off (`true` wins over `NO_COLOR`). Auto: see [Environment variables](#environment-variables). With a custom `sink` and no explicit `colors`, auto means **off**, so ANSI codes do not reach a file. |
-| `curl` | `boolean \| 'on-failure'` | `false` | Print the equivalent curl: never / for every request / only when the status is not 2xx or no response arrived. Other values warn and use `false`. |
+| `format` | `'compact' \| 'verbose'` | `'compact'` | `'compact'`: one line per call and detail only where something went wrong, printed by the [reporter](./compact-output.mdx). `'verbose'`: the 0.3 output (request, headers, bodies, response, curl) printed live. |
+| `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` | Which calls get a curl (and a `curl.sh` attachment): `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'`, `'never'`. Legacy: `true` is `'always'`, `false` is `'never'`, `'on-failure'` is any non-2xx. With `format: 'verbose'` the default is `false`, as in 0.3. Other values warn and use the default. |
+| `slowThresholdMs` | `number` | `1000` | A call at least this slow gets `▲` and a yellow time, and counts in the footer. |
+| `timeColumn` | `number \| 'auto'` | `82` | Column where the timing ends. `'auto'` fits the terminal width. A longer line keeps a 2-space gap and, past the terminal width, loses the middle of its query string. |
+| `details` | `'failed-tests' \| 'always' \| 'never'` | `'failed-tests'` | When a request with status >= 400 or a network error gets its `│` block: only when its test failed, always, or never. |
+| `bodyPreviewChars` | `number` | `200` | Length of the response body preview in the block, in characters. |
+| `theme` | `'ansi' \| 'dark' \| 'light'` | `'ansi'` | `'ansi'` uses the 16 basic colours of your terminal theme. `'dark'` and `'light'` are true-colour palettes (the ones of the README screenshots). |
+| `ascii` | `boolean` | `false` (`true` on legacy Windows consoles) | ASCII symbols (`\|` `<-` `^` `->` `ok` `x`) instead of Unicode. |
+| `mask` | `{ headers?, query?, bodyKeys? }` | `{}` | **Extra** names to mask, merged with the built-in lists and with `redactHeaders`, `redactQueryParams` and `redactBodyKeys`. The mask is always `***`. |
 | `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl is printed and saved: colours, single-line output and the `curl.sh` file. See [`curlFormat`](#curlformat). |
-| `logHeaders` | `boolean` | `true` | Log request and response headers. |
-| `logBody` | `boolean` | `true` | Log request and response bodies. |
-| `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters. A number ≥ 0; `Infinity` disables truncation. Also applies to the curl body. |
-| `redactHeaders` | `string[]` | `[]` plus the built-in `authorization`, `cookie`, `set-cookie`, `x-api-key` | **Extra** header names masked in logs and curl. Case-insensitive; merged with the defaults. |
-| `redactQueryParams` | `string[]` | `[]` plus the built-in `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` | **Extra** query parameter names masked in logged URLs and curl. Merged with the defaults. |
-| `redactBodyKeys` | `string[]` | `[]` (no built-in keys) | **Extra** JSON/form body keys and multipart field names masked in logged bodies and curl, at any depth. |
+| `logHeaders` | `boolean` | `true` | Log request and response headers (compact: keep them in the JSON attachment). |
+| `logBody` | `boolean` | `true` | Log request and response bodies (compact: keep them in the JSON attachment and show the response preview). |
+| `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters. A number ≥ 0; `Infinity` disables truncation. Applies to `format: 'verbose'` and the JSON attachment; the compact curl is cut at 2 KB. |
+| `redactHeaders` | `string[]` | `[]` plus the built-in `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token` | **Extra** header names masked in logs and curl. Case-insensitive; merged with the defaults. |
+| `redactQueryParams` | `string[]` | `[]` plus the built-in `api_key`, `apikey`, `token`, `access_token`, `refresh_token`, `key`, `password`, `secret`, `signature`, `sig` | **Extra** query parameter names masked in logged URLs and curl. Merged with the defaults. |
+| `redactBodyKeys` | `string[]` | `[]` plus the built-in `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin`, `access_token`, `refresh_token`, `api_key`, `card_number` | **Extra** JSON/form body keys and multipart field names masked in logged bodies and curl, at any depth. |
 | `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only your lists are used, and a list you leave out redacts nothing. Also applies to `browserLog.redact` (`selectors`, `keys`, `queryParams`, `headers`). Dangerous. |
 | `sink` | `(line: string) => void` | `console.log` | Where log lines go. A throwing sink warns once and falls back to `console.log`. |
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs and the original URL of redirected requests. The fixture fills it in; pass it yourself with `wrapRequestContext()`. |
@@ -61,11 +69,21 @@ Presentation of the curl command. Only the printed command changes; the redactio
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `colors` | `boolean \| 'auto'` | `'auto'` | `'auto'` colours the curl only when `NO_COLOR` is unset, the process is not on CI, the output is a terminal (stdout is a TTY, the test runner's own stdout is one, or `PLAYWRIGHT_FORCE_TTY` is set), the resolved `colors` is true and the sink is the default console one. A local `npx playwright test` in a terminal therefore colours it with no setting. `FORCE_COLOR` and a top-level `colors: true` alone do not colour it in CI or when piped. `true` is an **explicit override** that skips all of these checks (ANSI codes may reach CI logs, files and custom sinks); `false` never colours. See [When the curl is coloured](./api-logging.mdx#curl-colours-gate). |
+| `colors` | `boolean \| 'auto'` | `'auto'` | Colours the curl and, with `format: 'compact'`, the whole output printed by the fixture (without the reporter). `'auto'` colours only when `NO_COLOR` is unset, the process is not on CI, the output is a terminal (stdout is a TTY, the test runner's own stdout is one, or `PLAYWRIGHT_FORCE_TTY` is set), the resolved `colors` is true and the sink is the default console one. A local `npx playwright test` in a terminal therefore colours it with no setting. `FORCE_COLOR` and a top-level `colors: true` alone do not colour it in CI or when piped. `true` is an **explicit override** that skips all of these checks (ANSI codes may reach CI logs, files and custom sinks); `false` never colours. See [When the curl is coloured](./api-logging.mdx#curl-colours-gate). |
 | `multiline` | `boolean` | `true` | `false` prints the command on a single line, options joined by single spaces. Notes and redirect step comments stay on their own `#` lines above it. |
-| `file` | `boolean` | `true` | With the `test` fixture, write the test's curls to `curl.sh`, attach it to the report and print a one-line notice (no path, no test title). The file header is `#!/bin/sh` and the spec file and line of the test. Only applies while `curl` is enabled. |
+| `file` | `boolean` | `true` | With the `test` fixture, attach the curls to the report as scripts. Compact: `curl.sh` (or `curl-{n}-{METHOD}-{lastPathSegment}.sh`), `#!/usr/bin/env bash`, `${VAR}` placeholders for masked values. Verbose: one `curl.sh` (`#!/bin/sh`) and a one-line notice. Only applies while `curl` is enabled. |
 
 See [API logging › curl output](./api-logging.mdx#curl-colours) for the colours, the colouring rules and the `curl.sh` file.
+
+## Reporter options {#reporter-options}
+
+`playwright-logger-pro/reporter` takes the display options of `apiLog` (they win over what the fixture recorded) and one more. See [Compact output](./compact-output.mdx).
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii` | | as in [`apiLog`](#apilog-options) | Same meaning and defaults. |
+| `curl` | `'5xx' \| '4xx+' \| 'always' \| 'never'` | from `apiLog.curl` | Which calls show their curl. The fixture decides which calls carry one (`apiLog.curl`, and every failed call); this can only show fewer, or more of the failed ones. |
+| `colors` | `boolean \| 'auto'` | `'auto'` | `'auto'`: no colours on CI, with `NO_COLOR`, `FORCE_COLOR=0`, `TERM=dumb` or when stdout is not a terminal. `true` forces them on. |
 
 ## browserLog options {#browserlog-options}
 
@@ -109,8 +127,8 @@ See [API logging › curl output](./api-logging.mdx#curl-colours) for the colour
 | `selectors` | `(string \| RegExp)[]` | `DEFAULT_SENSITIVE_SELECTORS` | Matched against the target's description; strings are case-insensitive substrings. **Added** to the default list; `apiLog.replaceDefaultRedaction: true` replaces it. Text is also matched after splitting on camelCase, `_` and `-`, for your own entries too. |
 | `values` | `string[]` | `[]` | Literal secrets masked everywhere, in addition to the ones collected automatically. Values shorter than 4 characters are ignored. |
 | `keys` | `(string \| RegExp)[]` | the sensitive key patterns | Object keys masked inside arguments. **Added** to the default patterns; `apiLog.replaceDefaultRedaction: true` replaces them. |
-| `queryParams` | `string[]` | apiLog's resolved list: `api_key`, `apikey`, `token`, `access_token`, `password`, `secret` plus your `apiLog.redactQueryParams` | Extra query parameter names, added to apiLog's `redactQueryParams` (defaults included). Their values are masked in every URL the browser log prints. |
-| `headers` | `string[]` | apiLog's resolved list: `authorization`, `cookie`, `set-cookie`, `x-api-key` plus your `apiLog.redactHeaders` | Extra header names, added to apiLog's `redactHeaders` (defaults included). |
+| `queryParams` | `string[]` | apiLog's resolved list: `api_key`, `apikey`, `token`, `access_token`, `refresh_token`, `key`, `password`, `secret`, `signature`, `sig` plus your `apiLog.redactQueryParams` | Extra query parameter names, added to apiLog's `redactQueryParams` (defaults included). Their values are masked in every URL the browser log prints. |
+| `headers` | `string[]` | apiLog's resolved list: `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token` plus your `apiLog.redactHeaders` | Extra header names, added to apiLog's `redactHeaders` (defaults included). |
 | `inspectInputType` | `boolean` | `false` | Opt-in DOM probe for `type=password` after a fill. One extra round trip per distinct field. |
 
 ## `buildCurl` options {#curl-options}
@@ -126,6 +144,10 @@ See [API logging › curl output](./api-logging.mdx#curl-colours) for the colour
 | `colors` | `boolean` | `false` | Colour the command with ANSI codes. Removing the codes gives exactly the uncoloured command. |
 | `colorDepth` | `4 \| 8` | detected | Palette used with `colors`: `8` for the 256-colour palette (`38;5;N`), `4` for the 16 basic colours. Detected from `COLORTERM`, `TERM` and the terminal when omitted. See [API logging › Colours](./api-logging.mdx#curl-colours). |
 | `multiline` | `boolean` | `true` | One option per line with `\` continuations; `false` gives a single line. |
+| `mask` | `string \| (key: string) => string` | `'***'` | What replaces a masked value; a function receives the header, query parameter or body key name (the `curl.sh` attachment uses it for `${NAME}` placeholders). Do not combine a function with `colors`. |
+| `skipHeaders` | `readonly string[]` | none | Header names (case-insensitive) left out of the command. |
+| `truncationMarker` | `string` | none | Appended to a body cut by `maxBodyLength`. |
+| `truncationNote` | `(limit, total) => string` | built-in note | Text of the `#` note that announces a cut body. |
 
 ## Fixtures and exports {#fixtures-and-exports}
 
@@ -157,9 +179,11 @@ From `playwright-logger-pro`:
 | `detectColorSupport` | function | The colour auto-detection used by both loggers. |
 | `DEFAULT_CONFIG` | constant | Resolved defaults of `apiLog`. |
 | `DEFAULT_BROWSER_CONFIG` | constant | Resolved defaults of `browserLog`. |
-| `DEFAULT_REDACT_HEADERS` | constant | `authorization`, `cookie`, `set-cookie`, `x-api-key`. |
-| `DEFAULT_REDACT_QUERY_PARAMS` | constant | `api_key`, `apikey`, `token`, `access_token`, `password`, `secret`. |
-| `DEFAULT_REDACT_BODY_KEYS` | constant | Empty. |
+| `DEFAULT_REDACT_HEADERS` | constant | `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token`. |
+| `DEFAULT_REDACT_QUERY_PARAMS` | constant | `api_key`, `apikey`, `token`, `access_token`, `refresh_token`, `key`, `password`, `secret`, `signature`, `sig`. |
+| `DEFAULT_REDACT_BODY_KEYS` | constant | `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin` and the snake_case spellings of four of them. |
+| `renderCalls`, `renderCallLine`, `renderDetail`, `renderFooter`, `summarize` | functions | The pure renderer of the compact output: records and options in, lines out. |
+| `buildCurlParts` | function | The terminal and the `curl.sh` form of one call's curl. |
 | `DEFAULT_SENSITIVE_KEYS` | constant | Names that usually hold secrets (`password`, `token`, `api_key`, `authorization`, `cookie`, `otp`, `pin`, `cvv`, ...), shared by both loggers. |
 | `DEFAULT_SENSITIVE_SELECTORS` | constant | Patterns matched against a target's description to decide whether a typed value is masked. |
 | `renderBrowserEventText` | function | Render one browser event as text. |

@@ -19,6 +19,16 @@
   align-items: center;
 }
 
+/* The compact output is up to 92 columns wide: give the hero more room than the 1140px docs container
+   so it is not clipped from 1280px up. Narrower screens scroll inside the panel (see .heroTerminal pre). */
+@media (min-width: 997px) {
+  .heroInner {
+    max-width: min(1320px, 100%);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr);
+    gap: 2rem;
+  }
+}
+
 .title {
   font-size: clamp(2rem, 4.2vw, 3.25rem);
   line-height: 1.1;
@@ -85,6 +95,13 @@
 .heroTerminal :global(figure) {
   margin: 0;
   box-shadow: 0 18px 40px rgb(15 23 42 / 0.12);
+}
+
+/* Never wrap (the │ gutter and the curl lines stay intact); scroll inside the panel when too narrow. */
+.heroTerminal pre {
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 0.74rem;
 }
 
 .browserSection {

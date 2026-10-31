@@ -7,6 +7,10 @@ description: Log Playwright APIRequestContext requests and responses, with optio
 
 API logging prints every HTTP call made through Playwright's `APIRequestContext` (`request.get`, `post`, `put`, `patch`, `delete`, `head` and `fetch`). It is configured with the `apiLog` option.
 
+:::info Compact is the default since 0.4.0
+This page describes the line-by-line output, `apiLog: { format: 'verbose' }`. The default output, one line per call with detail only where a test failed, is described in [Compact output & the reporter](./compact-output.mdx). Options such as `curl`, `curlFormat`, redaction and `sink` apply to both formats.
+:::
+
 ## Two ways to turn it on
 
 <Tabs groupId="api-mode">
@@ -138,7 +142,17 @@ Cookies from the cookie jar are never carried over: Playwright re-reads the jar 
 
 ## curl output
 
-Set `curl: true` to print a curl for every request, or `curl: 'on-failure'` to print it only when the response status is not 2xx or no response arrived. The default is `false`.
+`curl` chooses which calls get a curl:
+
+| Value | Calls |
+| --- | --- |
+| `'5xx'` | Status >= 500 and network errors. The default with `format: 'compact'`. |
+| `'4xx+'` | Status >= 400 and network errors. |
+| `'always'` | Every call. Legacy `true` is the same. |
+| `'never'` | None. Legacy `false` is the same. The default with `format: 'verbose'`. |
+| `'on-failure'` | Legacy: any status that is not 2xx, and network errors. |
+
+In this verbose format the curl is printed under each call it applies to. Any other value warns once and uses the default.
 
 <TerminalOutput sample="api-failure" title="curl: 'on-failure', logHeaders: false" />
 
@@ -234,7 +248,9 @@ The header of the file is `#!/bin/sh`, then the spec file and line of the test, 
 
 **The test title is not written to the file**, and the notice names no path. Titles can contain data (a URL with a token, a user name) and Playwright derives the output folder name from them, so neither goes into the file, the attachment or the console line. The location has escape sequences (ANSI, OSC 8, OSC 52) and every control character removed, so it cannot start a command or write to the terminal.
 
-The script is **never coloured** and uses the same builder and the same redaction lists as the printed curl, so masked values are `***` in the file and in the attachment. There is no setting that writes unredacted values: put the real values back before you run it with `sh curl.sh`. The file follows `multiline`. Turn it off with `curlFormat: { file: false }`; it does nothing while `curl` is `false`, and with `curl: 'on-failure'` it only exists if a request failed.
+The script is **never coloured** and uses the same builder and the same redaction lists as the printed curl, so masked values are `***` in the file and in the attachment. There is no setting that writes unredacted values: put the real values back before you run it with `sh curl.sh`.
+
+That is the file of `format: 'verbose'`. With the default compact format the script is `#!/usr/bin/env bash` and holds no `***`: every masked value is a `${VAR}` placeholder named after its key, with a guard (`: "${TOKEN:?export TOKEN first}"`) at the top, and it is attached only for a failed test (or `details: 'always'`). `export` the variables, then run `bash curl.sh`. See [The curl.sh replay script](./compact-output.mdx#the-curlsh-replay-script). The file follows `multiline`. Turn it off with `curlFormat: { file: false }`; it does nothing while `curl` is `false`, and with `curl: 'on-failure'` it only exists if a request failed.
 
 :::warning curl limitations
 - **POSIX shells only.** Values are single-quoted for `sh`, `bash` and `zsh` (also Git Bash and WSL), and lines continue with `\` (unless `curlFormat.multiline` is `false`). The command does not work as-is in PowerShell or `cmd.exe`.
@@ -287,4 +303,4 @@ test.use({ apiLog: { enabled: false } }); // transparent pass-through
 
 ## Options with invalid values
 
-An option set to `undefined` uses its default. An invalid value (`maxBodyLength: NaN`, `curl: 'always'`, a `sink` that is not a function, a string where a list is expected) never fails a request: a one-time `[playwright-logger-pro]` warning is printed and the default is used.
+An option set to `undefined` uses its default. An invalid value (`maxBodyLength: NaN`, `curl: 'sometimes'`, a `sink` that is not a function, a string where a list is expected) never fails a request: a one-time `[playwright-logger-pro]` warning is printed and the default is used.

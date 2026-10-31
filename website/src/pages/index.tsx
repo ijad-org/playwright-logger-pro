@@ -57,7 +57,7 @@ export default function Home(): ReactNode {
             <InstallSnippet />
           </div>
           <div className={styles.heroTerminal}>
-            <TerminalOutput sample="api-post" title="playwright test · create vegetable" />
+            <TerminalOutput sample="api-compact" title="npx playwright test · one line per call, detail where it failed" />
           </div>
         </div>
       </header>

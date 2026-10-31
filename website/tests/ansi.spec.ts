@@ -27,6 +27,19 @@ test.describe('xterm 256-colour palette', () => {
   });
 });
 
+test.describe('parseAnsi: status chips', () => {
+  test('black text on a coloured background is the panel black, not its grey', () => {
+    const [chip] = parseAnsi(`${ESC}43m${ESC}1m${ESC}30m404${ESC}39m${ESC}22m${ESC}49m`);
+    expect(chip?.style).toEqual({color: 'var(--ansi-bg)', background: 'var(--ansi-yellow)'});
+    expect(parseAnsi(`${ESC}30mx`)[0]?.style?.color).toBe('var(--ansi-gray)');
+  });
+
+  test('bright white on red, and the bright-black mask background', () => {
+    expect(parseAnsi(`${ESC}41m${ESC}97m500`)[0]?.style).toEqual({color: '#ffffff', background: 'var(--ansi-red)'});
+    expect(parseAnsi(`${ESC}100m${ESC}97m***`)[0]?.style).toEqual({color: '#ffffff', background: '#7f7f7f'});
+  });
+});
+
 test.describe('parseAnsi', () => {
   test('38;5;N sets the exact hex as an inline colour and 39 resets it', () => {
     const spans = parseAnsi(`${ESC}38;5;63mGET${ESC}39m rest`);

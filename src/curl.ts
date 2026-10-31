@@ -3,7 +3,8 @@ import { palette, redactHeaders, splitChars } from './format';
 import type { CurlColorDepth } from './curlPalette';
 import type { Colorizer, Palette } from './format';
 import { multipartParts } from './multipart';
-import { REDACTED, redactBodyString, redactBodyValue, redactUrl } from './redact';
+import { REDACTED, maskFor, redactBodyString, redactBodyValue, redactUrl } from './redact';
+import type { Mask } from './redact';
 import { redirectRulesFor } from './playwrightVersion';
 
 export interface CurlOptions {
@@ -28,6 +29,18 @@ export interface CurlOptions {
    * false the command is a single line; notes stay on their own `#` lines.
    */
   multiline?: boolean;
+  /**
+   * What replaces a masked value (default `***`). A function receives the header, query
+   * parameter or body key name; the `curl.sh` attachment uses it for `${NAME}` placeholders.
+   * Colours only know `***`: do not combine a custom mask with `colors`.
+   */
+  mask?: Mask;
+  /** Header names (case-insensitive) left out of the command, e.g. ones curl adds itself. */
+  skipHeaders?: readonly string[];
+  /** Appended to a body cut by `maxBodyLength` (default: nothing). */
+  truncationMarker?: string;
+  /** Text of the `#` note that announces a cut body (default: a note that the replay is incomplete). */
+  truncationNote?: (limit: number, total: number) => string;
 }
 
 /** A piece of the command and how to colour it; the text is what a shell sees. */
@@ -252,11 +265,12 @@ export function buildCurl(
 ): string {
   const {
     redactQueryParams = [], redactBodyKeys = [], maxBodyLength, colors = false, colorDepth, multiline = true,
+    mask = REDACTED, skipHeaders = [], truncationMarker = '', truncationNote,
   } = options;
   const p = palette(colors, colorDepth);
   if (!isValidUrl(info.url)) return render([tok('# could not build curl: invalid URL', COMMENT)], p);
   const method = info.method.toUpperCase();
-  const parts = multipartParts(info.multipart, redactBodyKeys);
+  const parts = multipartParts(info.multipart, redactBodyKeys, mask);
   const hasBody = (parts !== undefined && parts.length > 0) ||
     (info.form !== undefined && Object.keys(info.form).length > 0) ||
     (info.data !== undefined && info.data !== null);
@@ -282,7 +296,7 @@ export function buildCurl(
     [tok('curl', (pal) => pal.curl)],
     ...methodTokens,
     ...(follow ? [[tok('-L')]] : []),
-    quoted(urlTokens(redactUrl(info.url, redactQueryParams))),
+    quoted(urlTokens(redactUrl(info.url, redactQueryParams, mask))),
   ];
   const lines: Token[][] = [joinTokens(head, [SPACE])];
 
@@ -293,11 +307,16 @@ export function buildCurl(
     const { head, rest } = splitChars(value, maxBodyLength);
     if (rest === 0) return value;
     truncated.push(maxBodyLength + rest);
-    return head;
+    return `${head}${truncationMarker}`;
   };
   const redactedKeys = new Set(redactBodyKeys.map((k) => k.toLowerCase()));
 
-  const headers = redactHeaders(info.headers ?? {}, redact);
+  const skipped = new Set(skipHeaders.map((h) => h.toLowerCase()));
+  const headers = redactHeaders(
+      Object.fromEntries(Object.entries(info.headers ?? {}).filter(([k]) => !skipped.has(k.toLowerCase()))),
+      redact,
+      mask,
+  );
   for (const [key, value] of Object.entries(headers)) {
     lines.push(option('-H', [tok(key, NAME), tok(':'), tok(' '), ...withMasks(value)]));
   }
@@ -320,7 +339,7 @@ export function buildCurl(
     }
   } else if (info.form && Object.keys(info.form).length > 0) {
     for (const [key, value] of Object.entries(info.form)) {
-      const safe = redactedKeys.has(key.toLowerCase()) ? REDACTED : limit(String(value));
+      const safe = redactedKeys.has(key.toLowerCase()) ? maskFor(mask, key) : limit(String(value));
       lines.push(option('--data-urlencode', pair(key, safe)));
     }
   } else if (info.data !== undefined && info.data !== null) {
@@ -340,8 +359,8 @@ export function buildCurl(
         `save it as ${BINARY_BODY_FILE} before replaying`);
     } else {
       const body = typeof info.data === 'string' ?
-        redactBodyString(info.data, redactBodyKeys, contentType) :
-        JSON.stringify(redactBodyValue(info.data, redactBodyKeys));
+        redactBodyString(info.data, redactBodyKeys, contentType, mask) :
+        JSON.stringify(redactBodyValue(info.data, redactBodyKeys, mask));
       lines.push(option('--data-raw', bodyTokens(limit(body), colors)));
     }
   }
@@ -354,8 +373,9 @@ export function buildCurl(
     notes.push(`# multipart file content is read from local file(s): ${localFiles.join(', ')}`);
   }
   if (truncated.length > 0) {
-    notes.push(`# request body truncated to maxBodyLength (${maxBodyLength} of ` +
-      `${Math.max(...truncated)} chars); the replayed body is incomplete`);
+    const total = Math.max(...truncated);
+    notes.push(truncationNote ? truncationNote(maxBodyLength ?? 0, total) :
+      `# request body truncated to maxBodyLength (${maxBodyLength} of ${total} chars); the replayed body is incomplete`);
   }
   const separator = multiline ? [SPACE, tok('\\'), tok('\n  ')] : [SPACE];
   return [
