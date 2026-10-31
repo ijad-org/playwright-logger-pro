@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1] - 2026-10-31
+
+### Changed
+
+- Metadata and docs only, no code or behaviour changes: new npm keywords, a description that starts with "Playwright logger", and links to the npm package in the README and the documentation intro and installation pages.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
