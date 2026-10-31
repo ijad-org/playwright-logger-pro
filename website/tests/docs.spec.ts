@@ -13,6 +13,31 @@ test('home page renders', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'npm package' })).toBeVisible();
 });
 
+test.describe('terminal sample', () => {
+  const rgb = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
+  };
+
+  for (const theme of ['light', 'dark']) {
+    test(`home hero shows the curl command coloured on a dark panel (${theme} theme)`, async ({ page }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), theme);
+      await page.goto('./');
+      const terminal = page.locator('figure', { hasText: 'curl -X POST' });
+      await expect(terminal).toBeVisible();
+      await expect(terminal).toHaveCSS('background-color', rgb('#000000'));
+
+      const code = terminal.locator('code');
+      await expect(code).not.toContainText('\u001b');
+      await expect(code).not.toContainText('[38;5;');
+      const colour = (text: string) => code.locator('span', { hasText: new RegExp(`^${text}$`) });
+      await expect(colour('POST').last()).toHaveCSS('color', rgb('#00875f'));
+      await expect(colour('http://localhost:3000/vegetables').last()).toHaveCSS('color', rgb('#5f5fff'));
+      await expect(colour('Content-Type').last()).toHaveCSS('color', rgb('#d700af'));
+    });
+  }
+});
+
 test.describe('search', () => {
   test('Ctrl+K opens the dialog with topics, typing finds pages and headings, Enter navigates', async ({ page }) => {
     await page.goto('docs/intro');

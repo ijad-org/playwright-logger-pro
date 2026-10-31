@@ -1,8 +1,8 @@
 [2m+0.112s[22m  page#1 opened
-[2m+0.113s[22m  ✎ seeded user 42
-[2m+0.114s[22m  [32m✓[39m [36mpage[39m.[1mgoto[22m('/login')  [2m22ms[22m
-[2m+0.138s[22m  [32m✓[39m [36mgetByLabel('Password')[39m.[1mfill[22m(***)  [2m31ms[22m
-[2m+0.171s[22m  [32m✓[39m [36mgetByRole('button', { name: 'Sign in' })[39m.[1mclick[22m()  [2m34ms[22m
-[2m+0.218s[22m  [31m✗[39m network POST http://localhost:3000/api/session [33m401[39m  [2m13ms[22m
-[2m+0.218s[22m  [31m⚠[39m [31mconsole.error[39m  Failed to load resource: the server responded with a status of 401 (Unauthorized)  [2m(session:0)[22m
-[2m+0.231s[22m  page#1 closed
+[2m+0.114s[22m  ✎ seeded user 42
+[2m+0.115s[22m  [32m✓[39m [36mpage[39m.[1mgoto[22m('/login')  [2m21ms[22m
+[2m+0.138s[22m  [32m✓[39m [36mgetByLabel('Password')[39m.[1mfill[22m(***)  [2m28ms[22m
+[2m+0.168s[22m  [32m✓[39m [36mgetByRole('button', { name: 'Sign in' })[39m.[1mclick[22m()  [2m45ms[22m
+[2m+0.220s[22m  [31m✗[39m network POST http://localhost:3000/api/session [33m401[39m  [2m9ms[22m
+[2m+0.221s[22m  [31m⚠[39m [31mconsole.error[39m  Failed to load resource: the server responded with a status of 401 (Unauthorized)  [2m(session:0)[22m
+[2m+0.232s[22m  page#1 closed

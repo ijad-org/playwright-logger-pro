@@ -15,8 +15,9 @@ interface Props {
 }
 
 /**
- * Terminal window showing real, coloured library output. The colours come from CSS variables
- * (--ansi-*) that meet AA contrast in both themes; glyphs and status text carry the meaning too.
+ * Terminal window showing real, coloured library output. The panel is dark in both site themes (like
+ * the terminals the colours are designed for); basic colours come from the --ansi-* variables, palette
+ * colours (38;5;N, 38;2;r;g;b) are the exact xterm hex. Glyphs and status text carry the meaning too.
  */
 export default function TerminalOutput({sample, ansi, title, className}: Props): ReactNode {
   const source = (sample ? samples[sample] : ansi) ?? '';
@@ -45,8 +46,8 @@ export default function TerminalOutput({sample, ansi, title, className}: Props):
       <pre className={styles.pre} tabIndex={0} aria-label={title ?? 'Terminal output'}>
         <code>
           {parseAnsi(text).map((span, i) =>
-            span.className ? (
-              <span key={i} className={span.className}>
+            span.className || span.style ? (
+              <span key={i} className={span.className || undefined} style={span.style}>
                 {span.text}
               </span>
             ) : (

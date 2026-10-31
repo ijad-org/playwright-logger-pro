@@ -1,3 +1,4 @@
 [34m→[39m [1m[36mGET[39m[22m http://127.0.0.1:9/health
-[31m✖[39m [36mGET[39m http://127.0.0.1:9/health [1m[31mfailed[39m[22m [2m(3ms)[22m apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:9
-curl 'http://127.0.0.1:9/health'
+[31m✖[39m [36mGET[39m http://127.0.0.1:9/health [1m[31mfailed[39m[22m [2m(4ms)[22m apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:9
+[1mcurl[22m '[38;5;63mhttp://127.0.0.1:9/health[39m'
+curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)
