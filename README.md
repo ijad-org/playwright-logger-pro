@@ -1,6 +1,8 @@
 # Playwright Logger Pro
 
-**Documentation:** <https://ijad-org.github.io/playwright-logger-pro/> · [Changelog](CHANGELOG.md)
+[![npm version](https://img.shields.io/npm/v/playwright-logger-pro.svg)](https://www.npmjs.com/package/playwright-logger-pro)
+
+**Documentation:** <https://ijad-org.github.io/playwright-logger-pro/> · [npm](https://www.npmjs.com/package/playwright-logger-pro) · [Changelog](CHANGELOG.md)
 
 Colorful **API and browser-action** logging for Playwright. Request/response logging for `APIRequestContext` — optionally with a copy-pastable `curl` command for every request (or only for failures) and secret headers redacted; plus a per-test timeline of what a test did in the browser, with secrets masked, attached to the report when a test fails.
 
