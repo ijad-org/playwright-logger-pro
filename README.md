@@ -6,12 +6,13 @@
 
 **API and browser-action** logging for Playwright. One line per API call and detail only where something went wrong, with a `curl` that replays the failed request and secrets masked; plus a per-test timeline of what a test did in the browser, attached to the report when a test fails.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-dark.png">
-  <img alt="Compact output: a line per API call under each test, a detail block with a curl for the failed 500, and a one-line total" src="https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-light.png">
-</picture>
+**Dark**
 
-Dark: <https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-dark.png> · light: <https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-light.png>
+![Compact output: a line per API call under each test, a detail block with a curl for the failed 500, and a one-line total (dark theme)](https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-dark.png)
+
+**Light**
+
+![Compact output: a line per API call under each test, a detail block with a curl for the failed 500, and a one-line total (light theme)](https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-light.png)
 
 The same output as text (the screenshots are rendered from `npm run demo`, see [Demo](#demo)):
 
