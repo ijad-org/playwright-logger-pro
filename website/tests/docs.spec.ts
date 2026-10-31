@@ -44,6 +44,39 @@ test.describe('terminal sample', () => {
   }
 });
 
+test.describe('hero terminal is not clipped', () => {
+  for (const width of [1280, 1400, 1920]) {
+    test(`at ${width}px the whole compact output fits in the hero panel`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('./');
+      const terminal = page.locator('figure', { hasText: 'curl -X POST' });
+      const pre = terminal.locator('pre');
+      await expect(pre).toBeVisible();
+      await expect(pre).toHaveCSS('overflow-x', 'auto');
+      await expect(pre).toHaveCSS('white-space', 'pre');
+      const code = terminal.locator('code');
+      await expect(code).toContainText("│ curl -X POST 'https://api.shop.test/v1/checkout?token=***&currency=EUR' \\");
+      await expect(code).toContainText('POST   500  https://api.shop.test/v1/checkout?token=***&currency=EUR   ▲ 1.83s');
+      const m = await pre.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+      expect(m.scroll, `scrollWidth ${m.scroll} > clientWidth ${m.client}`).toBeLessThanOrEqual(m.client);
+      // the panel itself is inside the viewport
+      const box = (await terminal.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    });
+  }
+
+  test('on a narrow screen lines never wrap and the panel scrolls horizontally', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('./');
+    const pre = page.locator('figure', { hasText: 'curl -X POST' }).locator('pre');
+    await expect(pre).toHaveCSS('overflow-x', 'auto');
+    await expect(pre).toHaveCSS('white-space', 'pre');
+    const m = await pre.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(m.scroll).toBeGreaterThan(m.client);
+  });
+});
+
 test.describe('search', () => {
   test('Ctrl+K opens the dialog with topics, typing finds pages and headings, Enter navigates', async ({ page }) => {
     await page.goto('docs/intro');
