@@ -42,9 +42,11 @@ use: {
 With `replaceDefaultRedaction: true`, anything not in your lists is printed in clear text, including `Authorization` and `Cookie` headers. The switch also drops the browser log's default `redact.selectors` and `redact.keys` and its query-parameter masking.
 :::
 
-A redacted curl contains the literal text `***`. Replace it with the real value before replaying. The `curl.sh` file and its report attachment are built by the same code with the same lists, are never coloured, and there is no setting that writes unredacted values. They do not contain the test title, and the console notice names no path (the output folder is named after the title).
+The curl printed on the console contains the literal text `***`. Replace it with the real value before replaying. The compact `curl*.sh` scripts instead hold a `${VAR}` placeholder with a guard for each masked value: `export` the variables, then run `bash curl.sh`. The `curl.sh` file and its report attachment are built by the same code with the same lists, are never coloured, and there is no setting that writes unredacted values. They do not contain the test title, and the console notice names no path (the output folder is named after the title).
 
 `redactBodyKeys` is **empty by default**, so no body value is masked until you configure it for the keys of your API. It masks JSON and form keys and multipart field names only: XML and other raw text bodies are not scrubbed. Playwright's own HTML report step titles show the full URL of every `request.get(...)` call, query string included, and the logger cannot mask them (see [Known limits](#known-limits)).
+
+Masking covers what the logger sees: the URL, headers, bodies, curl and attachments. Playwright's own error output, including the source-code excerpt it prints around a failing line, shows your test source as written, so a secret hard-coded in a test file can appear there. Keep secrets in environment variables.
 
 ## Browser logging
 
@@ -191,7 +193,7 @@ Masking covers what this logger outputs. Artifacts that Playwright itself writes
 Also remember:
 
 - Redaction is heuristic for browser input. A field the heuristics and your configuration cannot recognise is logged as typed.
-- A redacted curl has to be completed with the real values before replaying it.
+- A redacted curl has to be completed with the real values before replaying it: replace the `***` of a printed curl, or `export` the variables a compact `curl.sh` asks for.
 - Network capture (`network`) logs URLs, not bodies or headers.
 
 ## Check your own CI for leaks

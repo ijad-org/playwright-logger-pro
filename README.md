@@ -151,7 +151,7 @@ The `test` fixture records every call of a test (masked) in a `playwright-logger
 | `bodyPreviewChars` | `200` | Preview length. |
 | `theme` | `'ansi'` | `'ansi'` (the 16 basic colours of your terminal theme, readable on dark and light), `'dark'` or `'light'` (true colour, the palette of the screenshots). |
 | `ascii` | `false` | ASCII symbols (`\|` `<-` `^` `->` `ok` `x`). Automatic on legacy Windows consoles (no `WT_SESSION`). |
-| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls show their curl. |
+| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls show their curl **in their detail block**. Only calls with status >= 400 or a network error have a block, so `'always'` never prints a curl for a successful call (it is still recorded and attached). |
 | `colors` | `'auto'` | `true` forces colours; see [Colours](#compact-colours-ci-and-ascii). |
 
 The same display options (`slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`) work in `apiLog`; the fixture hands them to the reporter in the JSON attachment, and the reporter's own options win.
@@ -175,6 +175,8 @@ curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR'
 ```
 
 `export` the variables (the whole header value, `Bearer` included) and run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. Two masked values with the same key name share one variable. `curlFormat.file: false` turns the scripts off. Headers curl adds itself (`host`, `content-length`, `connection`, `accept-encoding`) are left out; `-X GET` is left out of a GET without a body.
+
+**`curl: 'always'` and the console.** It records a curl for every call (in the `playwright-logger-pro.json` attachment, and as `curl*.sh` files when the test failed or `details: 'always'`), but the console prints a curl only inside the detail block, which exists only for calls with status >= 400 or a network error. A successful call never prints one; open the attachment or script to get it.
 
 ### Masking
 
@@ -392,7 +394,9 @@ use: { apiLog: { redactBodyKeys: ['password', 'access_token', 'refreshToken'] } 
 use: { apiLog: { replaceDefaultRedaction: true, redactHeaders: ['x-internal-token'] } }
 ```
 
-A redacted curl sends `***` in place of the secret, so fill the real value back in before replaying it.
+A redacted curl sends `***` in place of the secret, so fill the real value back in before replaying it. The compact `curl*.sh` scripts use `${VAR}` placeholders instead: `export` the variables, then run `bash curl.sh`.
+
+**What masking covers.** Everything the logger sees: the URL, headers, bodies, the curl and the attachments. Playwright's own error output, including the source-code excerpt it prints around a failing line, shows your test source as written, so a secret hard-coded in a test file can appear there. Keep secrets in environment variables.
 
 ## Configuration
 
@@ -423,7 +427,7 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs. The fixture fills it in; pass it in Option B to get absolute URLs in error lines and their curl. |
 | `extraHTTPHeaders` | `Record<string, string>` | fixture: `use.extraHTTPHeaders` | Headers the context sends with every request. They are shown in logged headers and the curl. The fixture fills it in; in Option B, pass the same headers you gave `newContext()`. |
 
-An option set to `undefined` uses its default. An option with an invalid value (a string for a redact list, `maxBodyLength: NaN` or `-5`, `curl: 'always'`, a `sink` that is not a function, …) never fails the request: the logger prints a one-time `[playwright-logger-pro]` warning on the console and uses the default for that option. A `sink` that throws gets the same warning, and its lines go to `console.log` instead.
+An option set to `undefined` uses its default. An option with an invalid value (a string for a redact list, `maxBodyLength: NaN` or `-5`, `curl: 'sometimes'`, a `sink` that is not a function, …) never fails the request: the logger prints a one-time `[playwright-logger-pro]` warning on the console and uses the default for that option. A `sink` that throws gets the same warning, and its lines go to `console.log` instead.
 
 ### Colors
 

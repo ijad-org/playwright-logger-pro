@@ -60,6 +60,10 @@ curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR'
 
 `export` the variables, then run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. A test with several curls gets `curl-{n}-{METHOD}-{lastPathSegment}.sh`. A test that passed gets no script unless `details: 'always'`. Two masked values with the same key name share one variable.
 
+:::note `curl: 'always'` and the console
+With `curl: 'always'` a curl is recorded for every call: it is in the `playwright-logger-pro.json` attachment, and in `curl*.sh` files when the test failed or `details: 'always'`. The console, however, prints a curl only inside the detail block, which exists only for calls with status >= 400 or a network error. A successful call never prints one; open the attachment or the script to get it.
+:::
+
 ## Masking
 
 The mask is always `***`, never the length of the value. The built-in lists are listed in [Configuration](./configuration.mdx#apilog-options); add yours with `mask: { headers, query, bodyKeys }` (merged with them, and with the older `redactHeaders`, `redactQueryParams` and `redactBodyKeys`). A whole header value is masked, `Bearer` included.
