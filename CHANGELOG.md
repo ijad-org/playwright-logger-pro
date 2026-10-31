@@ -1,8 +1,6 @@
 # Changelog
 
-## [Unreleased]
-
-Planned as 0.4.0.
+## [0.4.0] - 2026-10-31
 
 ### Added
 
