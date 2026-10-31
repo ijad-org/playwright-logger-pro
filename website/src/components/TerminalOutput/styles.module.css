@@ -1,4 +1,17 @@
 .terminal {
+  /* Always dark, whatever the site theme: the curl palette (xterm 63, 163, 29 ...) is chosen to read
+     on a black terminal (>= 4.5:1 only on pure black, ~4:1 on a slate), so the panel is black. */
+  --ansi-bg: #000000;
+  --ansi-border: #26324a;
+  --ansi-fg: #e2e8f0;
+  --ansi-dim: #8b9bb0;
+  --ansi-red: #f87171;
+  --ansi-green: #4ade80;
+  --ansi-yellow: #facc15;
+  --ansi-blue: #60a5fa;
+  --ansi-magenta: #e879f9;
+  --ansi-cyan: #22d3ee;
+  --ansi-gray: #94a3b8;
   margin: 0 0 var(--ifm-leading) 0;
   border: 1px solid var(--ansi-border);
   border-radius: 0.75rem;
@@ -72,16 +85,7 @@
   color: inherit;
 }
 
-/* Global ANSI colour classes (used inside <code>). */
-.pre :global(.ansi-red) { color: var(--ansi-red); }
-.pre :global(.ansi-green) { color: var(--ansi-green); }
-.pre :global(.ansi-yellow) { color: var(--ansi-yellow); }
-.pre :global(.ansi-blue) { color: var(--ansi-blue); }
-.pre :global(.ansi-magenta) { color: var(--ansi-magenta); }
-.pre :global(.ansi-cyan) { color: var(--ansi-cyan); }
-.pre :global(.ansi-gray),
-.pre :global(.ansi-black) { color: var(--ansi-gray); }
-.pre :global(.ansi-white) { color: var(--ansi-fg); }
+/* Colours are inline (see ansi.ts); these classes only carry the text attributes. */
 .pre :global(.ansi-dim) { color: var(--ansi-dim); }
 .pre :global(.ansi-bold) { font-weight: 700; }
 .pre :global(.ansi-italic) { font-style: italic; }

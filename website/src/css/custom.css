@@ -29,19 +29,6 @@
   --docusaurus-highlighted-code-line-bg: rgb(21 128 61 / 0.08);
   --plp-surface: #f8fafc;
   --plp-focus: #15803d;
-
-  /* Terminal samples (ANSI SGR). All pairs are >= 4.5:1 on --ansi-bg. */
-  --ansi-bg: #f8fafc;
-  --ansi-border: #d9dee5;
-  --ansi-fg: #1e293b;
-  --ansi-dim: #586577;
-  --ansi-red: #b91c1c;
-  --ansi-green: #15803d;
-  --ansi-yellow: #8a4b00;
-  --ansi-blue: #1d4ed8;
-  --ansi-magenta: #a21caf;
-  --ansi-cyan: #0e7490;
-  --ansi-gray: #475569;
 }
 
 [data-theme='dark'] {
@@ -61,18 +48,6 @@
   --docusaurus-highlighted-code-line-bg: rgb(74 222 128 / 0.08);
   --plp-surface: #232427;
   --plp-focus: #4ade80;
-
-  --ansi-bg: #0b1220;
-  --ansi-border: #26324a;
-  --ansi-fg: #e2e8f0;
-  --ansi-dim: #8b9bb0;
-  --ansi-red: #f87171;
-  --ansi-green: #4ade80;
-  --ansi-yellow: #facc15;
-  --ansi-blue: #60a5fa;
-  --ansi-magenta: #e879f9;
-  --ansi-cyan: #22d3ee;
-  --ansi-gray: #94a3b8;
 }
 
 .sr-only {

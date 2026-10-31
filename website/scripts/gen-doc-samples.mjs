@@ -15,7 +15,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'plp-samples-'));
 const bin = path.join(root, 'node_modules', '.bin', 'playwright');
 const run = spawnSync(bin, ['test', '-c', path.join(here, 'gen-samples', 'playwright.config.mjs')], {
   cwd: root,
-  env: { ...process.env, PLP_SAMPLES_OUT: tmp, FORCE_COLOR: '1', NO_COLOR: undefined },
+  // COLORTERM/TERM make the curl command use the 256-colour palette, as in a modern terminal.
+  env: { ...process.env, PLP_SAMPLES_OUT: tmp, FORCE_COLOR: '1', COLORTERM: 'truecolor', TERM: 'xterm-256color', NO_COLOR: undefined },
   encoding: 'utf8',
 });
 // The browser-failure test fails on purpose, so the exit code is not checked.

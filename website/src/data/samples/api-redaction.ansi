@@ -4,14 +4,15 @@
     "user": "jo",
     "password": "***"
   }
-[34m←[39m [32mPOST[39m http://localhost:3000/api/session?api_key=***&q=shoes [1m[33m401 Unauthorized[39m[22m [2m(3ms)[22m
+[34m←[39m [32mPOST[39m http://localhost:3000/api/session?api_key=***&q=shoes [1m[33m401 Unauthorized[39m[22m [2m(2ms)[22m
   [2mcontent-type:[22m application/json
   [2mdate:[22m Thu, 29 Oct 2026 09:12:25 GMT
   [2mconnection:[22m keep-alive
   [2mkeep-alive:[22m timeout=5
   [2mtransfer-encoding:[22m chunked
   {"error":"invalid credentials"}
-curl -X POST 'http://localhost:3000/api/session?api_key=***&q=shoes' \
-  -H 'Authorization: ***' \
-  -H 'Content-Type: application/json' \
-  --data-raw '{"user":"jo","password":"***"}'
+[1mcurl[22m -X [38;5;29mPOST[39m '[38;5;63mhttp://localhost:3000/api/session[39m?[38;5;163mapi_key[39m=[1m[7m***[27m[22m&[38;5;163mq[39m=shoes' \
+  -H '[38;5;163mAuthorization[39m: [1m[7m***[27m[22m' \
+  -H '[38;5;163mContent-Type[39m: application/json' \
+  --data-raw '{[38;5;63m"user"[39m:[38;5;29m"jo"[39m,[38;5;63m"password"[39m:[38;5;29m"[39m[1m[7m***[27m[22m[38;5;29m"[39m}'
+curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)

@@ -3,13 +3,14 @@
     "name": "Orange",
     "price": 1
   }
-[34m←[39m [32mPOST[39m http://localhost:3000/vegetables [1m[32m201 Created[39m[22m [2m(11ms)[22m
+[34m←[39m [32mPOST[39m http://localhost:3000/vegetables [1m[32m201 Created[39m[22m [2m(10ms)[22m
   [2mcontent-type:[22m application/json
   [2mdate:[22m Thu, 29 Oct 2026 09:12:25 GMT
   [2mconnection:[22m keep-alive
   [2mkeep-alive:[22m timeout=5
   [2mtransfer-encoding:[22m chunked
   {"id":7,"msg":"Successfully added: Orange"}
-curl -X POST 'http://localhost:3000/vegetables' \
-  -H 'Content-Type: application/json' \
-  --data-raw '{"name":"Orange","price":1}'
+[1mcurl[22m -X [38;5;29mPOST[39m '[38;5;63mhttp://localhost:3000/vegetables[39m' \
+  -H '[38;5;163mContent-Type[39m: application/json' \
+  --data-raw '{[38;5;63m"name"[39m:[38;5;29m"Orange"[39m,[38;5;63m"price"[39m:1}'
+curl.sh: attached to the test report (see "curl.sh" in the HTML report; also saved in this test's output folder)
