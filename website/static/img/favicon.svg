@@ -1,15 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <style>
-    .badge { fill: #15803d; }
-    .arrows { fill: none; stroke: #ffffff; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
-    @media (prefers-color-scheme: dark) {
-      .badge { fill: #4ade80; }
-      .arrows { stroke: #052e16; }
-    }
-  </style>
-  <rect class="badge" width="64" height="64" rx="14"/>
-  <g class="arrows">
-    <path d="M12 20H42M35 13L42 20L35 27"/>
-    <path d="M52 44H22M29 37L22 44L29 51"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" fill="none">
+  <rect x="1.5" y="1.5" width="41" height="41" rx="11" fill="#0a0d12" stroke="#4ade80" stroke-width="3"/>
+  <path d="M11 15l6 5-6 5" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 15h12M21 22h8M21 29h10" stroke="#e6edf3" stroke-width="3.5" stroke-linecap="round"/>
 </svg>
