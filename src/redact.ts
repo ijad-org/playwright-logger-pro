@@ -3,6 +3,17 @@ import { warnOnce } from './warn';
 /** Placeholder that replaces every redacted value. */
 export const REDACTED = '***';
 
+/**
+ * What replaces a redacted value: a fixed string, or a function of the key (header, query
+ * parameter or body key name) it belongs to. The `curl.sh` attachment uses the function form to
+ * write a `${NAME}` placeholder per secret.
+ */
+export type Mask = string | ((key: string) => string);
+
+export function maskFor(mask: Mask, key: string): string {
+  return typeof mask === 'function' ? mask(key) : mask;
+}
+
 function lowerSet(keys: readonly string[]): Set<string> {
   return new Set(keys.map((k) => k.toLowerCase()));
 }
@@ -20,7 +31,7 @@ function decodeFormComponent(value: string): string {
  * application/x-www-form-urlencoded string such as a URL query. Everything
  * else is kept byte for byte.
  */
-export function redactQueryString(query: string, keys: readonly string[], mask: string = REDACTED): string {
+export function redactQueryString(query: string, keys: readonly string[], mask: Mask = REDACTED): string {
   if (keys.length === 0 || query.length === 0) return query;
   const names = lowerSet(keys);
   return query
@@ -28,14 +39,15 @@ export function redactQueryString(query: string, keys: readonly string[], mask: 
       .map((pair) => {
         const eq = pair.indexOf('=');
         const rawName = eq === -1 ? pair : pair.slice(0, eq);
-        if (!names.has(decodeFormComponent(rawName).toLowerCase())) return pair;
-        return `${rawName}=${mask}`;
+        const name = decodeFormComponent(rawName);
+        if (!names.has(name.toLowerCase())) return pair;
+        return `${rawName}=${maskFor(mask, name)}`;
       })
       .join('&');
 }
 
 /** Mask the values of the query parameters in `keys` (case-insensitive) in a URL. */
-export function redactUrl(url: string, keys: readonly string[], mask: string = REDACTED): string {
+export function redactUrl(url: string, keys: readonly string[], mask: Mask = REDACTED): string {
   if (keys.length === 0) return url;
   const hashAt = url.indexOf('#');
   const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
@@ -62,11 +74,11 @@ export function redactUrlsInText(text: string, keys: readonly string[], mask: st
   });
 }
 
-function redactDeep(value: unknown, names: Set<string>): { value: unknown; changed: boolean } {
+function redactDeep(value: unknown, names: Set<string>, mask: Mask): { value: unknown; changed: boolean } {
   if (Array.isArray(value)) {
     let changed = false;
     const out = value.map((item) => {
-      const r = redactDeep(item, names);
+      const r = redactDeep(item, names, mask);
       changed ||= r.changed;
       return r.value;
     });
@@ -80,11 +92,11 @@ function redactDeep(value: unknown, names: Set<string>): { value: unknown; chang
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
     if (names.has(key.toLowerCase())) {
-      out[key] = REDACTED;
+      out[key] = maskFor(mask, key);
       changed = true;
       continue;
     }
-    const r = redactDeep(item, names);
+    const r = redactDeep(item, names, mask);
     changed ||= r.changed;
     out[key] = r.value;
   }
@@ -95,9 +107,9 @@ function redactDeep(value: unknown, names: Set<string>): { value: unknown; chang
  * Mask the values of `keys` (case-insensitive, at any depth) in a JSON-like
  * object or array. Returns the input unchanged when nothing matched.
  */
-export function redactBodyValue<T>(data: T, keys: readonly string[]): T {
+export function redactBodyValue<T>(data: T, keys: readonly string[], mask: Mask = REDACTED): T {
   if (keys.length === 0) return data;
-  return redactDeep(data, lowerSet(keys)).value as T;
+  return redactDeep(data, lowerSet(keys), mask).value as T;
 }
 
 /**
@@ -109,19 +121,20 @@ export function redactBodyString(
     body: string,
     keys: readonly string[],
     contentType?: string,
+    mask: Mask = REDACTED,
 ): string {
   if (keys.length === 0) return body;
   const trimmed = body.trimStart();
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
-      const { value, changed } = redactDeep(JSON.parse(body), lowerSet(keys));
+      const { value, changed } = redactDeep(JSON.parse(body), lowerSet(keys), mask);
       return changed ? JSON.stringify(value) : body;
     } catch {
       // not JSON — fall through
     }
   }
   if (contentType && /application\/x-www-form-urlencoded/i.test(contentType)) {
-    return redactQueryString(body, keys);
+    return redactQueryString(body, keys, mask);
   }
   return body;
 }

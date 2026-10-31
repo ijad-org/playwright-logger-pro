@@ -292,7 +292,7 @@ describe('PCL-27/PCL-28: the step curls replay what the installed Playwright sen
       send: (api: APIRequestContext) => Promise<unknown>,
   ): Promise<{ original: Received[]; replay: Received[]; curl: string }> {
     const lines: string[] = [];
-    const api = wrapRequestContext(ctx, {
+    const api = wrapRequestContext(ctx, { format: 'verbose',
       colors: false, curl: true, baseURL: origin, sink: (l) => lines.push(l),
     });
     received.length = 0;

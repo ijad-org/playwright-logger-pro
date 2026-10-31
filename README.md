@@ -4,27 +4,64 @@
 
 **Documentation:** <https://ijad-org.github.io/playwright-logger-pro/> · [npm](https://www.npmjs.com/package/playwright-logger-pro) · [Changelog](CHANGELOG.md)
 
-Colorful **API and browser-action** logging for Playwright. Request/response logging for `APIRequestContext` — optionally with a copy-pastable `curl` command for every request (or only for failures) and secret headers redacted; plus a per-test timeline of what a test did in the browser, with secrets masked, attached to the report when a test fails.
+**API and browser-action** logging for Playwright. One line per API call and detail only where something went wrong, with a `curl` that replays the failed request and secrets masked; plus a per-test timeline of what a test did in the browser, attached to the report when a test fails.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-dark.png">
+  <img alt="Compact output: a line per API call under each test, a detail block with a curl for the failed 500, and a one-line total" src="https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-light.png">
+</picture>
+
+Dark: <https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-dark.png> · light: <https://raw.githubusercontent.com/ijad-org/playwright-logger-pro/main/docs/assets/compact-light.png>
+
+The same output as text (the screenshots are rendered from `npm run demo`, see [Demo](#demo)):
 
 ```
-→ POST /vegetables
-  {
-    "name": "Orange",
-    "price": 1
-  }
-← POST http://localhost:3000/vegetables 201 Created (23ms)
-  content-type: application/json
-  date: Thu, 29 Oct 2026 09:12:25 GMT
-  content-length: 43
-  {"id":7,"msg":"Successfully added: Orange"}
-curl -X POST 'http://localhost:3000/vegetables' \
-  -H 'Content-Type: application/json' \
-  --data-raw '{"name":"Orange","price":1}'
+  ✓  1 [chromium] › cart.spec.ts:8:5 › adds product to cart (1.2s)
+    GET    200  https://api.shop.test/v1/products?page=2&limit=20            142ms
+    POST   201  https://api.shop.test/v1/cart/items                           88ms
+    PUT    200  https://api.shop.test/v1/cart/items/42                        97ms
+  ✘  2 [chromium] › checkout.spec.ts:21:5 › places an order (2.4s)
+    GET    404  https://api.shop.test/v1/orders/99999                         73ms
+    │ ← 404 Not Found  {"error":"order not found"}
+    POST   500  https://api.shop.test/v1/checkout?token=***&currency=EUR   ▲ 1.83s
+    │ ← 500 Internal Server Error  {"error":"payment gateway timeout"}
+    │
+    │ curl -X POST 'https://api.shop.test/v1/checkout?token=***&currency=EUR' \
+    │   -H 'Authorization: ***' \
+    │   -H 'Content-Type: application/json' \
+    │   --data-raw '{"cartId":"c_812","cardToken":"***"}'
+    │
+    │ ↳ replay: curl.sh attached to the HTML report
+
+  1 failed
+    [chromium] › checkout.spec.ts:21:5 › places an order
+  2 passed (4.3s)
+  8 requests · 2 errors · 1 slow ≥1s
 ```
 
-Request headers (when the call sets any) and response headers are printed before each body; turn them off with `logHeaders: false`.
+The test lines and the `1 failed` summary are Playwright's list reporter; this package prints the request lines, the `│` blocks and the last line.
 
-Methods and statuses are color-coded (GET cyan, POST green, DELETE red, … / 2xx green, 4xx yellow, 5xx red). Colors follow the usual environment variables (see [Colors](#colors)); set `colors: true` to force them on whatever the environment says.
+## Quick start
+
+```sh
+npm i -D playwright-logger-pro
+```
+
+```ts
+// playwright.config.ts: register the reporter AFTER `list`
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [['list'], ['playwright-logger-pro/reporter', { /* options, see below */ }]],
+});
+```
+
+```ts
+// your specs: import test/expect from the package
+import { test, expect } from 'playwright-logger-pro/fixtures';
+```
+
+Without the reporter the fixture prints the same lines itself (above the result line, no total). To keep the 0.3 line-by-line output set `apiLog: { format: 'verbose' }` (see [Verbose format](#verbose-format-the-03-output)).
 
 ## Install
 
@@ -62,8 +99,9 @@ import type { ApiLoggerOptions } from 'playwright-logger-pro/fixtures';
 export default defineConfig<ApiLoggerOptions>({
   use: {
     baseURL: 'http://localhost:3000',
-    apiLog: { curl: 'on-failure' },
+    apiLog: { curl: '4xx+' },
   },
+  reporter: [['list'], ['playwright-logger-pro/reporter']],
 });
 ```
 
@@ -71,7 +109,7 @@ export default defineConfig<ApiLoggerOptions>({
 
 ```ts
 test.describe('debugging this flow', () => {
-  test.use({ apiLog: { curl: true, maxBodyLength: 10000 } });
+  test.use({ apiLog: { curl: 'always', details: 'always' } });
   // ...
 });
 ```
@@ -84,12 +122,104 @@ import { wrapRequestContext } from 'playwright-logger-pro';
 
 const ctx = wrapRequestContext(
     await request.newContext({ baseURL: 'https://api.example.com' }),
-    { curl: true },
+    { curl: 'always' },
 );
-const res = await ctx.get('/users');
+const res = await ctx.get('/users'); // prints its line (and, for a failed call, its block) at once
 ```
 
 The wrapper is a transparent proxy: everything on `APIRequestContext` (including `dispose()` and `storageState()`) keeps working; only the HTTP verb methods gain logging.
+
+## Compact output
+
+An API call prints one line: `METHOD STATUS  URL  TIMING`. The host is dimmed, masked values are `***`, a call of at least `slowThresholdMs` shows `▲ 1.83s`, and a 4xx, 5xx or network error (`ERR`) has a coloured **chip** in the status column (no extra characters, so columns do not shift). Past the terminal width the middle of the **query string** is replaced by `…`; the host and the path never are.
+
+A request with status >= 400, or no response, gets a `│` block directly under its line **when its test failed** (`details: 'failed-tests'`, the default). A 404 in a passing negative test keeps its chip and gets no block. The block starts with `← 404 Not Found  {…}`, the response body as one line (JSON minified, text its first line, cut at `bodyPreviewChars` with `…`, `<empty body>`, or `<binary 12.4 KB application/pdf>`); a network error shows `← ECONNREFUSED  connect ECONNREFUSED 127.0.0.1:9`. With `curl: '5xx'` (the default) a 5xx or network error also shows its curl and `↳ replay: curl.sh attached to the HTML report`.
+
+### Reporter
+
+```ts
+reporter: [['list'], ['playwright-logger-pro/reporter', { details: 'failed-tests', slowThresholdMs: 1000 }]],
+```
+
+The `test` fixture records every call of a test (masked) in a `playwright-logger-pro.json` attachment and the replay scripts in `curl*.sh`; the reporter, in the runner process, prints them when the test ends and adds the total after Playwright's summary: `8 requests · 2 errors · 1 slow ≥1s` (a zero segment is left out; errors are status >= 400 plus network failures). Printing from the workers cannot give this layout, because worker output reaches the terminal before the result line and interleaves between parallel tests.
+
+| Reporter option | Default | Description |
+| --- | --- | --- |
+| `slowThresholdMs` | `1000` | A call at least this slow gets `▲` and a yellow time, and counts in the total. |
+| `timeColumn` | `82` | Column where the timing ends; `'auto'` fits the terminal width. |
+| `details` | `'failed-tests'` | `'failed-tests'`, `'always'` or `'never'`. |
+| `bodyPreviewChars` | `200` | Preview length. |
+| `theme` | `'ansi'` | `'ansi'` (the 16 basic colours of your terminal theme, readable on dark and light), `'dark'` or `'light'` (true colour, the palette of the screenshots). |
+| `ascii` | `false` | ASCII symbols (`\|` `<-` `^` `->` `ok` `x`). Automatic on legacy Windows consoles (no `WT_SESSION`). |
+| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls show their curl. |
+| `colors` | `'auto'` | `true` forces colours; see [Colours](#compact-colours-ci-and-ascii). |
+
+The same display options (`slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`) work in `apiLog`; the fixture hands them to the reporter in the JSON attachment, and the reporter's own options win.
+
+### curl.sh
+
+For a failed test (or `details: 'always'`) each call that has a curl gets a script attached to the report: `curl.sh` when the test has one, else `curl-{n}-{METHOD}-{lastPathSegment}.sh`. **A script never contains a secret**: every masked value becomes an environment variable named after its key in UPPER_SNAKE_CASE, with a guard:
+
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+: "${TOKEN:?export TOKEN first}"
+: "${AUTHORIZATION:?export AUTHORIZATION first}"
+: "${CARD_TOKEN:?export CARD_TOKEN first}"
+# tests/checkout.spec.ts:21
+
+curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR' \
+  -H 'Authorization: '"${AUTHORIZATION}" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"cartId":"c_812","cardToken":"'"${CARD_TOKEN}"'"}'
+```
+
+`export` the variables (the whole header value, `Bearer` included) and run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. Two masked values with the same key name share one variable. `curlFormat.file: false` turns the scripts off. Headers curl adds itself (`host`, `content-length`, `connection`, `accept-encoding`) are left out; `-X GET` is left out of a GET without a body.
+
+### Masking
+
+The mask is always exactly `***`, never the length of the value, and it is the same in the line, the body preview, the curl, the scripts (as placeholders) and the JSON attachment. Defaults, case-insensitive, **merged** with what you add (`mask: { headers, query, bodyKeys }`, or the older `redactHeaders`, `redactQueryParams`, `redactBodyKeys`):
+
+- headers: `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token` (the whole value);
+- query parameters: `token`, `access_token`, `refresh_token`, `api_key`, `apikey`, `key`, `password`, `secret`, `signature`, `sig`;
+- JSON/form body keys, at any depth and inside arrays: `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin` (and `access_token`, `refresh_token`, `api_key`, `card_number`).
+
+### Compact colours, CI and ASCII
+
+The compact output follows the colour rules of [`curlFormat.colors: 'auto'`](#when-the-curl-is-coloured): colours only in a real terminal, never on CI, with `NO_COLOR`, `FORCE_COLOR=0` or `TERM=dumb`; `FORCE_COLOR` alone does not colour CI logs or piped output. `colors: true` on the reporter (or `curlFormat.colors: true` for the fixture) forces them. Without colours the status column is 5 wide so a failure still stands out: ` 200 ` and `[404]`. `▲`, `│` and `***` stay as they are.
+
+### Ordering with the list reporter
+
+- **No terminal (CI, a pipe), any number of workers:** each test's lines sit under its result line. Without colours the list reporter writes through a stream that finishes a line on the next tick, so the reporter prints one `setImmediate` later; blocks of tests that end in the same tick carry a title line.
+- **Terminal, one worker:** the list reporter rewrites its result line in place; nothing runs in parallel, so the lines go out at once, under it.
+- **Terminal, several workers:** the list reporter counts the rows it printed and rewrites by moving the cursor up that many rows, so any extra line printed while a test is still running makes the next rewrite land on the wrong row (garbled output). The reporter therefore **holds its lines until no test is running**, then prints them with a title line (`✓  [chromium] › cart.spec.ts:8:5 › …`), at the latest at the end of the run. Nothing is garbled, but with many workers most blocks come after the result lines.
+- With `NO_COLOR` in a terminal, Playwright's list reporter strips its own cursor movements and glues lines together, with or without this package.
+
+### Demo
+
+`npm run demo` runs three tests (the scenario above) against a mock shop API, with the list reporter and this package's reporter. `npm run screenshots` renders the real output of the demo, dark and light, to `docs/assets/compact-dark.png` and `compact-light.png` (needs Chromium); `docs/assets` is not part of the npm package.
+
+### Verbose format (the 0.3 output)
+
+`apiLog: { format: 'verbose' }` prints every call as before, live: request line and body, response line, headers, body and (with `curl`) the curl:
+
+```
+→ POST /vegetables
+  {
+    "name": "Orange",
+    "price": 1
+  }
+← POST http://localhost:3000/vegetables 201 Created (23ms)
+  content-type: application/json
+  date: Thu, 29 Oct 2026 09:12:25 GMT
+  content-length: 43
+  {"id":7,"msg":"Successfully added: Orange"}
+curl -X POST 'http://localhost:3000/vegetables' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"name":"Orange","price":1}'
+```
+
+Request headers (when the call sets any) and response headers are printed before each body; turn them off with `logHeaders: false`. Methods and statuses are color-coded (GET cyan, POST green, DELETE red, … / 2xx green, 4xx yellow, 5xx red). In this format `curl` defaults to `false`, `curlFormat.file` writes the `#!/bin/sh` `curl.sh` described under [curl.sh (verbose)](#curlsh-verbose), and the sections below on the curl output, `logHeaders`, `logBody` and `maxBodyLength` apply as they did in 0.3.
 
 ## Browser action logging
 
@@ -272,14 +402,22 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a no-op pass-through. |
 | `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR` for the log lines; the curl follows [its own rule](#when-the-curl-is-coloured)). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
-| `curl` | `boolean \| 'on-failure'` | `false` | Print equivalent curl: never / always / only when status isn't 2xx. |
-| `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl looks and is saved: ANSI colours (`true`, `false` or `'auto'`), one option per line or a single line, and the `curl.sh` file. See [curl output](#curl-output). |
-| `logHeaders` | `boolean` | `true` | Log request/response headers. |
-| `logBody` | `boolean` | `true` | Log request/response bodies. |
-| `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters (a number >= 0; `Infinity` disables truncation). Also applies to the curl body, which then starts with a `# request body truncated…` comment. |
-| `redactHeaders` | `string[]` | `[]` (+ the defaults: `authorization, cookie, set-cookie, x-api-key`) | **Extra** header names masked with `***` in logs **and** curl output. Merged with the defaults. |
-| `redactQueryParams` | `string[]` | `[]` (+ the defaults: `api_key, apikey, token, access_token, password, secret`) | **Extra** query parameter names masked with `***` in logged URLs **and** curl output. Merged with the defaults. |
-| `redactBodyKeys` | `string[]` | `[]` (no defaults) | **Extra** JSON/form body keys (and multipart field names) masked with `***` in logged request/response bodies **and** curl output. Merged with the (empty) defaults. |
+| `format` | `'compact' \| 'verbose'` | `'compact'` | One line per call and detail where it failed ([Compact output](#compact-output)), or the 0.3 output ([Verbose format](#verbose-format-the-03-output)). |
+| `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` (`false` with `format: 'verbose'`) | Which calls get a curl: `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'` (= `true`), `'never'` (= `false`); legacy `'on-failure'` is any non-2xx. |
+| `slowThresholdMs` | `number` | `1000` | A call at least this slow gets `▲` and counts in the total. |
+| `timeColumn` | `number \| 'auto'` | `82` | Column where the timing ends. |
+| `details` | `'failed-tests' \| 'always' \| 'never'` | `'failed-tests'` | When a failed request gets its `│` block. |
+| `bodyPreviewChars` | `number` | `200` | Response preview length in the block. |
+| `theme` | `'ansi' \| 'dark' \| 'light'` | `'ansi'` | 16 basic colours of your terminal, or a true-colour palette. |
+| `ascii` | `boolean` | `false` (`true` on legacy Windows consoles) | ASCII instead of Unicode symbols. |
+| `mask` | `{ headers?, query?, bodyKeys? }` | `{}` | **Extra** names masked with `***`, merged with the defaults and with `redactHeaders`, `redactQueryParams`, `redactBodyKeys`. |
+| `curlFormat` | `{ colors?, multiline?, file? }` | `{ colors: 'auto', multiline: true, file: true }` | How the curl looks and is saved: ANSI colours (`true`, `false` or `'auto'`; in compact also the output the fixture prints without the reporter), one option per line or a single line, and the `curl*.sh` attachments. See [curl output](#curl-output). |
+| `logHeaders` | `boolean` | `true` | Log request/response headers (compact: keep them in the JSON attachment). |
+| `logBody` | `boolean` | `true` | Log request/response bodies (compact: keep them in the JSON attachment and show the response preview). |
+| `maxBodyLength` | `number` | `2000` | Truncate logged bodies beyond this many characters (a number >= 0; `Infinity` disables truncation). In verbose it also applies to the curl body, which then starts with a `# request body truncated…` comment; the compact curl is cut at 2 KB. |
+| `redactHeaders` | `string[]` | `[]` (+ the defaults: `authorization, proxy-authorization, cookie, set-cookie, x-api-key, x-auth-token`) | **Extra** header names masked with `***` in logs **and** curl output. Merged with the defaults. |
+| `redactQueryParams` | `string[]` | `[]` (+ the defaults: `api_key, apikey, token, access_token, refresh_token, key, password, secret, signature, sig`) | **Extra** query parameter names masked with `***` in logged URLs **and** curl output. Merged with the defaults. |
+| `redactBodyKeys` | `string[]` | `[]` (+ the defaults: `password, token, accessToken, refreshToken, secret, apiKey, cardToken, cardNumber, cvv, pin, access_token, refresh_token, api_key, card_number`) | **Extra** JSON/form body keys (and multipart field names) masked with `***` in logged request/response bodies **and** curl output. Merged with the defaults. |
 | `replaceDefaultRedaction` | `boolean` | `false` | `true` drops the built-in lists: only the lists you pass are used. Dangerous, see Recipes. |
 | `sink` | `(line: string) => void` | `console.log` | Redirect output (file, allure attachment, …). With a custom `sink` and no explicit `colors`, colors default to **off**, so ANSI codes do not end up in a file. |
 | `baseURL` | `string` | fixture: `use.baseURL` | Used to show absolute URLs. The fixture fills it in; pass it in Option B to get absolute URLs in error lines and their curl. |
@@ -316,7 +454,7 @@ Some things to know about the output:
 
 ## curl output
 
-With `curl: true` (or `'on-failure'`) every request is followed by a command you can paste into a POSIX shell. `curlFormat` controls how it is printed:
+With `format: 'verbose'`, `curl: true` (or `'on-failure'`) puts a command you can paste into a POSIX shell after every request; in compact output the command is part of the `│` block (see above). `curlFormat` controls how it is printed:
 
 ```ts
 use: { apiLog: { curl: true, curlFormat: { colors: 'auto', multiline: true, file: true } } }
@@ -373,9 +511,9 @@ npx playwright test                          # in a terminal: coloured curl
 PLAYWRIGHT_FORCE_TTY=1 npx playwright test | tee run.log   # you assert the output is a terminal
 ```
 
-### curl.sh
+### curl.sh (verbose)
 
-With the `test` fixture, the commands a test printed are also written, plain and redacted, to `curl.sh` in the test's output directory and attached to the report as `curl.sh` (`text/plain`). The file starts with:
+With `format: 'verbose'` and the `test` fixture, the commands a test printed are also written, plain and redacted, to `curl.sh` in the test's output directory and attached to the report as `curl.sh` (`text/plain`). The file starts with:
 
 ```sh
 #!/bin/sh
@@ -393,7 +531,7 @@ curl.sh: attached to the test report (see "curl.sh" in the HTML report; also sav
 
 Turn the file off with `curlFormat: { file: false }`. It is written at the end of the test, passed or failed, and only if at least one curl was produced (`curl: 'on-failure'` with only 2xx responses produces none). The file follows `multiline`.
 
-**Redaction.** The printed curl, `curl.sh` and its attachment use the same builder and the same redaction lists (`redactHeaders`, `redactQueryParams`, `redactBodyKeys`), so a masked value is `***` everywhere. There is no switch that writes unredacted values; fill the real ones in before replaying. `redactBodyKeys` is **empty by default**: configure it for the body keys of your API (it masks JSON and form keys and multipart field names only; XML and other raw text bodies are not scrubbed). Playwright's own HTML report step titles show the full request URLs of `request.get(...)` calls; the logger cannot mask them (see [Secrets & redaction](#secrets--redaction)).
+**Redaction.** The printed curl, `curl.sh` and its attachment use the same builder and the same redaction lists (`redactHeaders`, `redactQueryParams`, `redactBodyKeys`), so a masked value is `***` everywhere. There is no switch that writes unredacted values; fill the real ones in before replaying. `redactBodyKeys` has a default list (see above): add the body keys of your API (it masks JSON and form keys and multipart field names only; XML and other raw text bodies are not scrubbed). Playwright's own HTML report step titles show the full request URLs of `request.get(...)` calls; the logger cannot mask them (see [Secrets & redaction](#secrets--redaction)).
 
 ```sh
 sh curl.sh   # after replacing the *** placeholders
@@ -568,7 +706,6 @@ Before 1.48 `test.step` records the direct caller as the step location, which wo
 
 - `expect()` assertion logging
 - `page.request` / `context.request` traffic
-- Opt-in body-key redaction defaults for apiLog (its request bodies can contain `password` fields today; see `DEFAULT_SENSITIVE_KEYS`)
 
 ## License
 

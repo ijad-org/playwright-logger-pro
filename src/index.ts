@@ -18,8 +18,29 @@ export {
   truncateBody,
   stringifyBody,
 } from './format';
+export {
+  renderCalls,
+  renderCallLine,
+  renderDetail,
+  renderFooter,
+  summarize,
+  formatDuration,
+  shortenQuery,
+  bodyPreview,
+} from './compact/render';
+export type { RenderOptions, CallStats } from './compact/render';
+export { buildCurlParts, envName } from './compact/curlScript';
+export type { CurlParts } from './compact/curlScript';
+export type { BodyRecord, CallRecord, CallsAttachment } from './compact/types';
+export type { ReporterOptions } from './reporter';
 export type {
   ApiLoggerConfig,
+  CompactDisplayConfig,
+  CurlMode,
+  DetailsMode,
+  MaskConfig,
+  OutputFormat,
+  ThemeName,
   CurlFormatConfig,
   RedirectHop,
   RequestInfo,

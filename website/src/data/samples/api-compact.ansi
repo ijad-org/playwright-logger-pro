@@ -1,0 +1,28 @@
+
+[2mRunning [22m3[2m tests using [22m1[2m worker[22m
+
+  [32m✓[39m  [2m1 [22m[chromium] › cart.spec.ts:8:5 › adds product to cart[2m (1.2s)[22m
+    [1m[34mGET[39m[22m    [1m[32m200[39m[22m  [90mhttps://api.shop.test[39m/v1/products?page=2&limit=20            [90m148ms[39m
+    [1m[32mPOST[39m[22m   [1m[32m201[39m[22m  [90mhttps://api.shop.test[39m/v1/cart/items                           [90m86ms[39m
+    [1m[33mPUT[39m[22m    [1m[32m200[39m[22m  [90mhttps://api.shop.test[39m/v1/cart/items/42                        [90m95ms[39m
+  [31m✘[39m  [2m2 [22m[31m[chromium] › checkout.spec.ts:21:5 › places an order[39m[2m (2.4s)[22m
+    [1m[34mGET[39m[22m    [43m[1m[30m404[39m[22m[49m  [90mhttps://api.shop.test[39m/v1/orders/99999                         [90m70ms[39m
+    [33m│[39m [90m←[39m [1m[33m404 Not Found[39m[22m  {"error":"order not found"}
+    [1m[32mPOST[39m[22m   [41m[1m[97m500[39m[22m[49m  [90mhttps://api.shop.test[39m/v1/checkout?token=[100m[97m***[39m[49m&currency=EUR   [1m[33m▲ 1.83s[39m[22m
+    [31m│[39m [90m←[39m [1m[31m500 Internal Server Error[39m[22m  {"error":"payment gateway timeout"}
+    [31m│[39m
+    [31m│[39m [1mcurl[22m [90m-X[39m [1m[32mPOST[39m[22m [34m'https://api.shop.test/v1/checkout?token=[39m[100m[97m***[39m[49m[34m&currency=EUR'[39m [90m\[39m
+    [31m│[39m   [90m-H[39m [34m'Authorization: [39m[100m[97m***[39m[49m[34m'[39m [90m\[39m
+    [31m│[39m   [90m-H[39m [34m'Content-Type: application/json'[39m [90m\[39m
+    [31m│[39m   [90m--data-raw[39m [34m'{"cartId":"c_812","cardToken":"[39m[100m[97m***[39m[49m[34m"}'[39m
+    [31m│[39m
+    [31m│[39m [90m↳ replay: [39m[1mcurl.sh[22m[90m attached to the HTML report[39m
+  [32m✓[39m  [2m3 [22m[chromium] › profile.spec.ts:14:5 › updates profile and clears sessions[2m (653ms)[22m
+    [1m[35mPATCH[39m[22m  [1m[32m204[39m[22m  [90mhttps://api.shop.test[39m/v1/users/7                              [90m65ms[39m
+    [1m[31mDELETE[39m[22m [1m[32m204[39m[22m  [90mhttps://api.shop.test[39m/v1/sessions/old                         [90m44ms[39m
+    [1m[34mGET[39m[22m    [1m[36m304[39m[22m  [90mhttps://cdn.shop.test[39m/assets/catalog.json                     [90m10ms[39m
+
+[31m  1 failed[39m
+[31m    [chromium] › checkout.spec.ts:21:5 › places an order[22m[39m
+[32m  2 passed[39m[2m (5.4s)[22m
+  [90m8 requests[39m[90m · [39m[1m[31m2 errors[39m[22m[90m · [39m[1m[33m1 slow ≥1s[39m[22m

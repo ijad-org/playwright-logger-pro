@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/fixtures.ts'],
+  entry: ['src/index.ts', 'src/fixtures.ts', 'src/reporter.ts'],
   format: ['cjs', 'esm'],
   dts: true,
   // No source maps: Playwright maps every frame of every API call's stack through them, which

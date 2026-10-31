@@ -13,7 +13,8 @@ description: Moving from playwright-colorful-logger to playwright-logger-pro, an
 - `playwright-logger-pro@0.1.0`: the renamed package, API logging only, with the fixes described in [Behaviour changes](#behaviour-changes-from-playwright-colorful-logger).
 - `playwright-logger-pro@0.2.0`: adds browser logging. See [From 0.1 to 0.2](#from-01-to-02).
 - `playwright-logger-pro@0.3.0`: adds coloured curl output and `curl.sh` per test.
-- `playwright-logger-pro@0.3.1` (this documentation): metadata and docs only (keywords, description, npm links). No changes needed.
+- `playwright-logger-pro@0.3.1`: metadata and docs only (keywords, description, npm links). No changes needed.
+- `playwright-logger-pro@0.4.0` (this documentation): compact output and a reporter, new defaults. See [From 0.3 to 0.4](#from-03-to-04).
 :::
 
 ## Why the rename
@@ -94,6 +95,28 @@ The first rows change what you see in logs. Review them before merging the migra
 | `undefined` options | `{ curl: undefined }` overwrote the default with `undefined`. | An option set to `undefined` uses its default. | None |
 | Invalid options | Undefined behaviour. | A one-time `[playwright-logger-pro]` warning and the default. | None |
 | Binary and control characters | Binary responses were decoded as text; escape sequences in bodies reached the terminal. | Binary responses are summarised as `<binary N bytes (type)>`; control characters are escaped. | None |
+
+## From 0.3 to 0.4 {#from-03-to-04}
+
+:::warning The default output changed
+API calls now print **one line each** (`format: 'compact'`), through the new reporter. To keep the 0.3 output exactly, set `apiLog: { format: 'verbose' }`.
+:::
+
+```ts title="playwright.config.ts"
+reporter: [['list'], ['playwright-logger-pro/reporter']], // the new output
+use: { apiLog: { format: 'verbose' } },                    // or: keep the old one
+```
+
+| Change | Notes |
+| --- | --- |
+| `format: 'compact'` is the default | One line per call, detail under failed requests of a failed test. Without the reporter registered the fixture prints the lines itself (above the result line, no total). |
+| `curl` accepts `'5xx'`, `'4xx+'`, `'always'`, `'never'` | The default is `'5xx'` (it was `false`) for the compact format. `true`, `false` and `'on-failure'` keep working (`'always'`, `'never'`, `'4xx+'` in compact); `format: 'verbose'` defaults to `false` as before. |
+| `curl.sh` in compact | `#!/usr/bin/env bash`, `set -euo pipefail`, `${VAR}` placeholders for masked values with a guard each, and only for failed tests (or `details: 'always'`). `format: 'verbose'` keeps the 0.3 file. |
+| More values masked by default | Headers `proxy-authorization`, `x-auth-token`; query parameters `refresh_token`, `key`, `signature`, `sig`; and, new, JSON/form body keys `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin` (and snake_case spellings). Your own lists are merged with them; `replaceDefaultRedaction: true` drops them. |
+| New options | `format`, `slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`, `mask`. See [Configuration](./configuration.mdx#apilog-options). |
+| New entry point | `playwright-logger-pro/reporter`. |
+| JSON attachment | Tests with API calls get a `playwright-logger-pro.json` attachment (masked records), which the reporter reads. |
+| Colour | Compact output follows the rules of `curlFormat.colors: 'auto'` (none on CI, with `NO_COLOR` or when piped); `FORCE_COLOR` alone does not colour it. |
 
 ## From 0.1 to 0.2
 

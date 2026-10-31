@@ -11,8 +11,11 @@ import {
 import { compileKeyPatterns } from '../src/browser/sensitive';
 import { DEFAULT_REDACT_BODY_KEYS as typesBodyKeys } from '../src/types';
 
-test('D7: one shared sensitive-key list; apiLog body redaction stays opt-in', () => {
-  assert.deepEqual([...typesBodyKeys], []);
+test('D7: one shared sensitive-key list; apiLog masks its own, shorter default body keys', () => {
+  // 0.4.0: the common secrets are masked in API bodies by default (they were opt-in before).
+  for (const k of ['password', 'token', 'accessToken', 'refreshToken', 'secret', 'apiKey', 'cardToken', 'cardNumber', 'cvv', 'pin']) {
+    assert.ok(typesBodyKeys.includes(k), k);
+  }
   for (const k of ['password', 'token', 'secret', 'pin', 'cvv']) assert.ok(DEFAULT_SENSITIVE_KEYS.includes(k), k);
 });
 

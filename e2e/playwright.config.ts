@@ -12,6 +12,8 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
+    // These specs check the 0.3 line-by-line output (the browser log also records it).
+    ...({ apiLog: { format: 'verbose' } } as Record<string, unknown>),
     trace: 'off',
     screenshot: 'off',
     video: 'off',

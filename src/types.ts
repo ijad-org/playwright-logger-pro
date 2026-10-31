@@ -1,5 +1,19 @@
 import { autoCurlColors, isOff } from './env';
 import { describeValue, warnOnce } from './warn';
+import { curlModeOf, legacyConsole, resolveDisplay, DEFAULT_DISPLAY } from './compact/options';
+import type { CompactDisplayConfig, CurlMode, OutputFormat, ResolvedDisplay } from './compact/options';
+
+export type { CompactDisplayConfig, CurlMode, DetailsMode, OutputFormat, ThemeName } from './compact/options';
+
+/** Extra names to mask, merged with the built-in lists. */
+export interface MaskConfig {
+  /** Header names (case-insensitive); same as `redactHeaders`. */
+  headers?: string[];
+  /** Query parameter names; same as `redactQueryParams`. */
+  query?: string[];
+  /** JSON/form body keys, at any depth; same as `redactBodyKeys`. */
+  bodyKeys?: string[];
+}
 
 /**
  * Configuration for the API logger. All fields optional; see DEFAULT_CONFIG
@@ -39,7 +53,18 @@ export interface CurlFormatConfig {
 /** `CurlFormatConfig` with every default filled in and `colors` resolved to a boolean. */
 export type ResolvedCurlFormat = Required<Omit<CurlFormatConfig, 'colors'>> & { colors: boolean };
 
-export interface ApiLoggerConfig {
+export interface ApiLoggerConfig extends CompactDisplayConfig {
+  /**
+   * `'compact'` (default): one line per call, detail only where something went wrong, rendered by
+   * the `playwright-logger-pro/reporter` reporter (or by the fixture when it is not registered).
+   * `'verbose'`: the 0.3 output (request, headers, bodies, response, curl) printed live.
+   */
+  format?: OutputFormat;
+  /**
+   * Extra names to mask, merged with the built-in lists and with `redactHeaders`,
+   * `redactQueryParams` and `redactBodyKeys` (which keep working). The mask is always `***`.
+   */
+  mask?: MaskConfig;
   /** Master switch. Set false to make the wrapper a transparent pass-through. */
   enabled?: boolean;
   /**
@@ -51,13 +76,15 @@ export interface ApiLoggerConfig {
    */
   colors?: boolean;
   /**
-   * Print the equivalent curl command for each request.
-   * - false: never (default)
-   * - true: for every request
-   * - 'on-failure': only when the response status is not 2xx
-   * Any other value is ignored with a console warning (default: false).
+   * Which calls get their equivalent curl command (and a `curl.sh` attachment).
+   * - '5xx' (default with `format: 'compact'`): status >= 500 and network errors
+   * - '4xx+': status >= 400 and network errors
+   * - 'always' (same as true): every call
+   * - 'never' (same as false; the default with `format: 'verbose'`)
+   * - 'on-failure' (legacy): any status that is not 2xx, and network errors
+   * Any other value is ignored with a console warning.
    */
-  curl?: boolean | 'on-failure';
+  curl?: boolean | 'on-failure' | CurlMode;
   /**
    * Presentation of the curl command: colours, single-line output and the `curl.sh` file.
    * Only the printed command changes; the redaction is the same everywhere. An invalid
@@ -89,7 +116,7 @@ export interface ApiLoggerConfig {
   /**
    * Extra keys (case-insensitive, at any depth) whose values are masked in
    * JSON and form request/response bodies, in logs and curl output. MERGED
-   * with DEFAULT_REDACT_BODY_KEYS (empty) unless `replaceDefaultRedaction`
+   * with DEFAULT_REDACT_BODY_KEYS unless `replaceDefaultRedaction`
    * is true.
    */
   redactBodyKeys?: string[];
@@ -117,8 +144,9 @@ export interface ApiLoggerConfig {
 
 type OptionalKeys = 'baseURL' | 'extraHTTPHeaders';
 export type ResolvedConfig =
-  Required<Omit<ApiLoggerConfig, OptionalKeys | 'curlFormat'>> &
+  Required<Omit<ApiLoggerConfig, OptionalKeys | 'curlFormat' | 'mask' | keyof CompactDisplayConfig>> &
   Pick<ApiLoggerConfig, OptionalKeys> &
+  ResolvedDisplay &
   { curlFormat: ResolvedCurlFormat };
 
 type ColorEnv = Record<string, string | undefined>;
@@ -153,19 +181,28 @@ export function detectColorSupport(
 
 /** Header names redacted by default. Custom `redactHeaders` are added to these. */
 export const DEFAULT_REDACT_HEADERS: readonly string[] = Object.freeze([
-  'authorization', 'cookie', 'set-cookie', 'x-api-key',
+  'authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token',
 ]);
 /** Query parameter names redacted by default. Custom `redactQueryParams` are added to these. */
 export const DEFAULT_REDACT_QUERY_PARAMS: readonly string[] = Object.freeze([
-  'api_key', 'apikey', 'token', 'access_token', 'password', 'secret',
+  'api_key', 'apikey', 'token', 'access_token', 'refresh_token', 'key', 'password', 'secret', 'signature', 'sig',
 ]);
-/** Body keys redacted by default (none). Custom `redactBodyKeys` are added to these. */
-export const DEFAULT_REDACT_BODY_KEYS: readonly string[] = Object.freeze([]);
+/**
+ * Body keys redacted by default, at any depth (the snake_case spellings of the camelCase
+ * ones included). Custom `redactBodyKeys` are added to these.
+ */
+export const DEFAULT_REDACT_BODY_KEYS: readonly string[] = Object.freeze([
+  'password', 'token', 'accessToken', 'refreshToken', 'secret', 'apiKey', 'cardToken', 'cardNumber', 'cvv', 'pin',
+  'access_token', 'refresh_token', 'api_key', 'card_number',
+]);
 
 export const DEFAULT_CONFIG: ResolvedConfig = {
   enabled: true,
   colors: detectColorSupport(),
-  curl: false,
+  curl: '5xx',
+  format: 'compact',
+  ...DEFAULT_DISPLAY,
+  ascii: legacyConsole(),
   curlFormat: { colors: detectColorSupport() && autoCurlColors(), multiline: true, file: true },
   logHeaders: true,
   logBody: true,
@@ -193,6 +230,7 @@ export function mergeNames(...lists: Array<readonly string[]>): string[] {
 const KNOWN_CURL_FORMAT_OPTIONS = new Set(['colors', 'multiline', 'file']);
 
 const KNOWN_OPTIONS = new Set([
+  'format', 'slowThresholdMs', 'timeColumn', 'details', 'bodyPreviewChars', 'theme', 'ascii', 'mask',
   'enabled', 'colors', 'curl', 'curlFormat', 'logHeaders', 'logBody', 'maxBodyLength', 'redactHeaders',
   'redactQueryParams', 'redactBodyKeys', 'replaceDefaultRedaction', 'sink', 'baseURL',
   'extraHTTPHeaders',
@@ -269,19 +307,34 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
   };
 
   const replace = bool('replaceDefaultRedaction', false);
-  const redactList = (key: keyof ApiLoggerConfig, defaults: readonly string[]): string[] => {
-    const value = get(key);
-    if (value === undefined) return replace ? [] : [...defaults];
+  let maskInput: Record<string, unknown> = {};
+  const rawMask = get('mask');
+  if (rawMask !== undefined) {
+    if (rawMask !== null && typeof rawMask === 'object' && !Array.isArray(rawMask)) {
+      maskInput = rawMask as Record<string, unknown>;
+      for (const key of Object.keys(maskInput)) {
+        if (!['headers', 'query', 'bodyKeys'].includes(key)) warnOnce(`unknown option "mask.${key}" ignored`);
+      }
+    } else {
+      invalid('mask', 'an object', rawMask, 'the defaults');
+    }
+  }
+  const names = (key: string, value: unknown): string[] | undefined => {
+    if (value === undefined) return undefined;
     if (!Array.isArray(value)) {
       invalid(key, 'an array of strings', value, 'the defaults');
-      return [...defaults];
+      return undefined;
     }
     const strings = value.filter((v): v is string => typeof v === 'string');
     if (strings.length !== value.length) {
       warnOnce(`option "${key}" contains entries that are not strings; they were ignored`);
     }
-    const names = strings.map((v) => v.trim()).filter((v) => v.length > 0);
-    return mergeNames(replace ? [] : defaults, names);
+    return strings.map((v) => v.trim()).filter((v) => v.length > 0);
+  };
+  const redactList = (key: keyof ApiLoggerConfig, alias: string, defaults: readonly string[]): string[] => {
+    const own = names(key, get(key)) ?? [];
+    const viaMask = names(`mask.${alias}`, maskInput[alias]) ?? [];
+    return mergeNames(replace ? [] : defaults, own, viaMask);
   };
 
   let maxBodyLength = DEFAULT_CONFIG.maxBodyLength;
@@ -294,13 +347,19 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
     }
   }
 
-  let curl: ResolvedConfig['curl'] = DEFAULT_CONFIG.curl;
+  let format: OutputFormat = DEFAULT_CONFIG.format;
+  const rawFormat = get('format');
+  if (rawFormat === 'compact' || rawFormat === 'verbose') format = rawFormat;
+  else if (rawFormat !== undefined) invalid('format', "'compact' or 'verbose'", rawFormat, "'compact'");
+
+  // The default depends on the format: compact prints a curl for 5xx, verbose none (as in 0.3).
+  let curl: ResolvedConfig['curl'] = format === 'verbose' ? false : DEFAULT_CONFIG.curl;
   const rawCurl = get('curl');
   if (rawCurl !== undefined) {
-    if (rawCurl === true || rawCurl === false || rawCurl === 'on-failure') {
-      curl = rawCurl;
+    if (rawCurl === 'on-failure' || curlModeOf(rawCurl) !== undefined) {
+      curl = rawCurl as ResolvedConfig['curl'];
     } else {
-      invalid('curl', "true, false or 'on-failure'", rawCurl, 'false');
+      invalid('curl', "true, false, 'on-failure', '5xx', '4xx+', 'always' or 'never'", rawCurl, String(curl));
     }
   }
 
@@ -349,6 +408,8 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
   }
 
   return {
+    ...resolveDisplay(input, undefined, invalid),
+    format,
     enabled: bool('enabled', DEFAULT_CONFIG.enabled),
     colors,
     curl,
@@ -356,9 +417,9 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
     logHeaders: bool('logHeaders', DEFAULT_CONFIG.logHeaders),
     logBody: bool('logBody', DEFAULT_CONFIG.logBody),
     maxBodyLength,
-    redactHeaders: redactList('redactHeaders', DEFAULT_REDACT_HEADERS),
-    redactQueryParams: redactList('redactQueryParams', DEFAULT_REDACT_QUERY_PARAMS),
-    redactBodyKeys: redactList('redactBodyKeys', DEFAULT_REDACT_BODY_KEYS),
+    redactHeaders: redactList('redactHeaders', 'headers', DEFAULT_REDACT_HEADERS),
+    redactQueryParams: redactList('redactQueryParams', 'query', DEFAULT_REDACT_QUERY_PARAMS),
+    redactBodyKeys: redactList('redactBodyKeys', 'bodyKeys', DEFAULT_REDACT_BODY_KEYS),
     replaceDefaultRedaction: replace,
     sink,
     baseURL,

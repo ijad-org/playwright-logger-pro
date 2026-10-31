@@ -693,7 +693,7 @@ describe('the request wrapper prints the curl with curlFormat', () => {
     const lines: string[] = [];
     const plain: string[] = [];
     const api = withEnv({ ...CLEAN_ENV, ...env }, () => withTty(true, () =>
-      wrapRequestContext(ctx, { curl: true, ...config, sink: config?.sink ?? ((l) => lines.push(l)) }, {
+      wrapRequestContext(ctx, { format: 'verbose', curl: true, ...config, sink: config?.sink ?? ((l) => lines.push(l)) }, {
         onCurl: (c) => plain.push(c),
       })));
     // A config without a sink must reach the default console sink, which the test cannot see:
@@ -716,7 +716,7 @@ describe('the request wrapper prints the curl with curlFormat', () => {
     // wrapRequestContext resolves the config when it is called.
     const lines: string[] = [];
     const api = withEnv({ ...CLEAN_ENV, NO_COLOR: '1', FORCE_COLOR: '1' }, () => withTty(true, () =>
-      wrapRequestContext(ctx, { curl: true, sink: (l) => lines.push(l), colors: undefined, curlFormat: { colors: 'auto' } })));
+      wrapRequestContext(ctx, { format: 'verbose', curl: true, sink: (l) => lines.push(l), colors: undefined, curlFormat: { colors: 'auto' } })));
     await api.get('/y');
     assert.ok(lines.every((l) => !HAS_ANSI.test(l)), lines.join('\n'));
   });
@@ -728,7 +728,7 @@ describe('the request wrapper prints the curl with curlFormat', () => {
     try {
       for (const [env, tty] of [[{ CI: '1', FORCE_COLOR: '1' }, true], [{ FORCE_COLOR: '1' }, false]] as const) {
         printed.length = 0;
-        const api = withEnv({ ...CLEAN_ENV, ...env }, () => withTty(tty, () => wrapRequestContext(ctx, { curl: true })));
+        const api = withEnv({ ...CLEAN_ENV, ...env }, () => withTty(tty, () => wrapRequestContext(ctx, { format: 'verbose', curl: true })));
         await api.get('/z?token=abc');
         const curl = printed.filter((l) => stripAnsi(l).startsWith('curl '));
         assert.equal(curl.length, 1, printed.join('\n'));
@@ -736,7 +736,7 @@ describe('the request wrapper prints the curl with curlFormat', () => {
         assert.ok(printed.some((l) => HAS_ANSI.test(l) && l.includes('→')), 'the request line is still coloured');
       }
       printed.length = 0;
-      const api = withEnv({ ...CLEAN_ENV, FORCE_COLOR: '1' }, () => withTty(true, () => wrapRequestContext(ctx, { curl: true })));
+      const api = withEnv({ ...CLEAN_ENV, FORCE_COLOR: '1' }, () => withTty(true, () => wrapRequestContext(ctx, { format: 'verbose', curl: true })));
       await api.get('/z');
       assert.ok(printed.some((l) => stripAnsi(l).startsWith('curl ') && HAS_ANSI.test(l)), 'a terminal gets colour');
     } finally {
@@ -909,7 +909,7 @@ describe('curl.sh', () => {
       await inTmp(async (dir) => {
         const commands: string[] = [];
         const shown: string[] = [];
-        const wrapped = wrapRequestContext(api, {
+        const wrapped = wrapRequestContext(api, { format: 'verbose',
           curl: true, colors: true, curlFormat: { colors: true }, redactBodyKeys: ['pin'], sink: (l) => shown.push(l),
         }, { onCurl: (c) => commands.push(c) });
         await wrapped.post('/p?api_key=KEY-1', {

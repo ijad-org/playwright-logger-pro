@@ -9,6 +9,9 @@ const OUT = process.env.PLP_SAMPLES_OUT!;
 // The curl command is coloured since 0.3.0; `colors: true` asks for it even though stdout is a pipe here.
 // The palette depth (256 colours) is detected from COLORTERM/TERM, which ../gen-doc-samples.mjs sets.
 const curlFormat = { colors: true };
+// These samples show the 0.3 line-by-line output, which is `format: 'verbose'` since 0.4.0.
+// The compact one (api-compact) comes from the demo, see ../gen-doc-samples.mjs.
+const verbose = { format: 'verbose' } as const;
 const sinkTo = (name: string) => (line: string) => fs.appendFileSync(path.join(OUT, `${name}.ansi`), `${line}\n`);
 
 let server: http.Server;
@@ -42,7 +45,7 @@ test.beforeAll(async () => {
 test.afterAll(() => server.close());
 
 test.describe('api-post', () => {
-  test.use({ apiLog: { colors: true, curl: true, curlFormat, sink: sinkTo('api-post') } });
+  test.use({ apiLog: { ...verbose, colors: true, curl: true, curlFormat, sink: sinkTo('api-post') } });
   test('create', async ({ request }) => {
     const res = await request.post('/vegetables', { data: { name: 'Orange', price: 1 } });
     expect(res.status()).toBe(201);
@@ -50,7 +53,7 @@ test.describe('api-post', () => {
 });
 
 test.describe('api-failure', () => {
-  test.use({ apiLog: { colors: true, curl: 'on-failure', curlFormat, logHeaders: false, sink: sinkTo('api-failure') } });
+  test.use({ apiLog: { ...verbose, colors: true, curl: 'on-failure', curlFormat, logHeaders: false, sink: sinkTo('api-failure') } });
   test('missing', async ({ request }) => {
     const res = await request.get('/vegetables/99');
     expect(res.status()).toBe(404);
@@ -58,14 +61,14 @@ test.describe('api-failure', () => {
 });
 
 test.describe('api-refused', () => {
-  test.use({ apiLog: { colors: true, curl: 'on-failure', curlFormat, sink: sinkTo('api-refused') } });
+  test.use({ apiLog: { ...verbose, colors: true, curl: 'on-failure', curlFormat, sink: sinkTo('api-refused') } });
   test('connection refused', async ({ request }) => {
     await expect(request.get('http://127.0.0.1:9/health', { timeout: 3000 })).rejects.toThrow();
   });
 });
 
 test.describe('api-redaction', () => {
-  test.use({ apiLog: { colors: true, curl: true, curlFormat, sink: sinkTo('api-redaction'), redactBodyKeys: ['password'] } });
+  test.use({ apiLog: { ...verbose, colors: true, curl: true, curlFormat, sink: sinkTo('api-redaction'), redactBodyKeys: ['password'] } });
   test('login', async ({ request }) => {
     await request.post('/api/session?api_key=sk_live_123&q=shoes', {
       headers: { Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.demo' },

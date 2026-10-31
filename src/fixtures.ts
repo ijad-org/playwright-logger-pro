@@ -3,6 +3,10 @@ import type { ApiLoggerConfig } from './types';
 import { resolveConfig } from './types';
 import { writeCurlScript } from './curlFile';
 import { wrapRequestContext } from './wrapRequestContext';
+import type { CompactCall } from './wrapRequestContext';
+import { renderOptionsOf } from './compact/capture';
+import { finishCompact, reporterActive } from './compact/finish';
+import { renderCallLine } from './compact/render';
 import { BrowserLogSession, NOOP_HANDLE } from './browser/session';
 import type { BrowserLogHandle } from './browser/session';
 import { getRegistry } from './browser/registry';
@@ -104,10 +108,31 @@ export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtur
       baseURL: apiLog.baseURL ?? baseURL,
       extraHTTPHeaders: apiLog.extraHTTPHeaders ?? extraHTTPHeaders,
     });
-    const config = _plpSession ? _plpSession.teeApiLog(resolved) : resolved;
+    const compact = resolved.format === 'compact';
+    const customSink = apiLog.sink !== undefined;
+    const reporter = compact && reporterActive(testInfo);
+    // The fixture prints (through the sink, so the browser log gets the lines too) unless the
+    // reporter does; in that case the browser log is fed the plain request lines directly.
+    const printsHere = !compact || !reporter || customSink;
+    const config = _plpSession && printsHere ? _plpSession.teeApiLog(resolved) : resolved;
     const curls: string[] = [];
-    await use(wrapRequestContext(request, config, { onCurl: (plain) => curls.push(plain) }));
-    await writeCurlScript(curls, testInfo, { log: config.sink });
+    const calls: CompactCall[] = [];
+    const onCall = (call: CompactCall) => {
+      calls.push(call);
+      if (_plpSession && !printsHere) {
+        try {
+          _plpSession.addApi(renderCallLine(call.record, renderOptionsOf(resolved, false, 120)));
+        } catch {
+          // never fail the request for logging
+        }
+      }
+    };
+    await use(wrapRequestContext(request, config, { onCurl: (plain) => curls.push(plain), onCall }));
+    if (compact) {
+      await finishCompact(calls, testInfo, { cfg: resolveConfig(config), customSink, reporter });
+    } else {
+      await writeCurlScript(curls, testInfo, { log: config.sink });
+    }
   },
 
   browserLogger: async ({ _plpSession }, use) => {

@@ -1,0 +1,18 @@
+    \e[1m\e[34mGET\e[39m\e[22m    \e[1m\e[32m200\e[39m\e[22m  \e[90mhttps://api.shop.test\e[39m/v1/products?page=2&limit=20            \e[90m142ms\e[39m
+    \e[1m\e[32mPOST\e[39m\e[22m   \e[1m\e[32m201\e[39m\e[22m  \e[90mhttps://api.shop.test\e[39m/v1/cart/items                           \e[90m88ms\e[39m
+    \e[1m\e[33mPUT\e[39m\e[22m    \e[1m\e[32m200\e[39m\e[22m  \e[90mhttps://api.shop.test\e[39m/v1/cart/items/42                        \e[90m97ms\e[39m
+    \e[1m\e[35mPATCH\e[39m\e[22m  \e[1m\e[32m204\e[39m\e[22m  \e[90mhttps://api.shop.test\e[39m/v1/users/7                              \e[90m61ms\e[39m
+    \e[1m\e[31mDELETE\e[39m\e[22m \e[1m\e[32m204\e[39m\e[22m  \e[90mhttps://api.shop.test\e[39m/v1/sessions/old                         \e[90m45ms\e[39m
+    \e[1m\e[34mGET\e[39m\e[22m    \e[1m\e[36m304\e[39m\e[22m  \e[90mhttps://cdn.shop.test\e[39m/assets/catalog.json                     \e[90m12ms\e[39m
+    \e[1m\e[34mGET\e[39m\e[22m    \e[43m\e[1m\e[30m404\e[39m\e[22m\e[49m  \e[90mhttps://api.shop.test\e[39m/v1/orders/99999                         \e[90m73ms\e[39m
+    \e[33m│\e[39m \e[90m←\e[39m \e[1m\e[33m404 Not Found\e[39m\e[22m  {"error":"order not found"}
+    \e[1m\e[32mPOST\e[39m\e[22m   \e[41m\e[1m\e[97m500\e[39m\e[22m\e[49m  \e[90mhttps://api.shop.test\e[39m/v1/checkout?token=\e[100m\e[97m***\e[39m\e[49m&currency=EUR   \e[1m\e[33m▲ 1.83s\e[39m\e[22m
+    \e[31m│\e[39m \e[90m←\e[39m \e[1m\e[31m500 Internal Server Error\e[39m\e[22m  {"error":"payment gateway timeout"}
+    \e[31m│\e[39m
+    \e[31m│\e[39m \e[1mcurl\e[22m \e[90m-X\e[39m \e[1m\e[32mPOST\e[39m\e[22m \e[34m'https://api.shop.test/v1/checkout?token=\e[39m\e[100m\e[97m***\e[39m\e[49m\e[34m&currency=EUR'\e[39m \e[90m\\e[39m
+    \e[31m│\e[39m   \e[90m-H\e[39m \e[34m'Authorization: \e[39m\e[100m\e[97m***\e[39m\e[49m\e[34m'\e[39m \e[90m\\e[39m
+    \e[31m│\e[39m   \e[90m-H\e[39m \e[34m'Content-Type: application/json'\e[39m \e[90m\\e[39m
+    \e[31m│\e[39m   \e[90m--data-raw\e[39m \e[34m'{"cartId":"c_812","cardToken":"\e[39m\e[100m\e[97m***\e[39m\e[49m\e[34m"}'\e[39m
+    \e[31m│\e[39m
+    \e[31m│\e[39m \e[90m↳ replay: \e[39m\e[1mcurl.sh\e[22m\e[90m attached to the HTML report\e[39m
+  \e[90m8 requests\e[39m\e[90m · \e[39m\e[1m\e[31m2 errors\e[39m\e[22m\e[90m · \e[39m\e[1m\e[33m1 slow ≥1s\e[39m\e[22m

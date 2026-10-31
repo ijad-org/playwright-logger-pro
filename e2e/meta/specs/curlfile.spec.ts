@@ -9,7 +9,7 @@ async function send(request: import('@playwright/test').APIRequestContext): Prom
 }
 
 test.describe('curl.sh', () => {
-  test.use({ apiLog: { curl: true, redactBodyKeys: ['pin'] } });
+  test.use({ apiLog: { format: 'verbose', curl: true, redactBodyKeys: ['pin'] } });
 
   test('curl file: default', async ({ request }) => {
     await send(request);
@@ -23,21 +23,21 @@ test.describe('curl.sh', () => {
 
 test.describe('curl.sh off or not applicable', () => {
   test.describe('file: false', () => {
-    test.use({ apiLog: { curl: true, curlFormat: { file: false } } });
+    test.use({ apiLog: { format: 'verbose', curl: true, curlFormat: { file: false } } });
     test('curl file: switched off', async ({ request }) => {
       await send(request);
     });
   });
 
   test.describe('curl: false', () => {
-    test.use({ apiLog: { curl: false } });
+    test.use({ apiLog: { format: 'verbose', curl: false } });
     test('curl file: curl disabled', async ({ request }) => {
       await send(request);
     });
   });
 
   test.describe('on-failure', () => {
-    test.use({ apiLog: { curl: 'on-failure' } });
+    test.use({ apiLog: { format: 'verbose', curl: 'on-failure' } });
     test('curl file: on-failure with only 2xx responses', async ({ request }) => {
       await send(request);
     });
@@ -46,7 +46,7 @@ test.describe('curl.sh off or not applicable', () => {
 
 test.describe('custom sink', () => {
   test.use({
-    apiLog: { curl: true, sink: (line: string) => console.log(`SINK|${JSON.stringify(line)}`) },
+    apiLog: { format: 'verbose', curl: true, sink: (line: string) => console.log(`SINK|${JSON.stringify(line)}`) },
   });
   test('curl file: custom sink gets plain lines', async ({ request }) => {
     await send(request);
@@ -55,7 +55,7 @@ test.describe('custom sink', () => {
 
 test.describe('custom sink with explicit colors', () => {
   test.use({
-    apiLog: { curl: true, colors: true, sink: (line: string) => console.log(`SINK|${JSON.stringify(line)}`) },
+    apiLog: { format: 'verbose', curl: true, colors: true, sink: (line: string) => console.log(`SINK|${JSON.stringify(line)}`) },
   });
   test('curl file: custom sink with colors true', async ({ request }) => {
     await send(request);
@@ -63,7 +63,7 @@ test.describe('custom sink with explicit colors', () => {
 });
 
 test.describe('titles stay out of curl.sh', () => {
-  test.use({ apiLog: { curl: true }, browserLog: { redact: { values: [VALUE_CANARY] } } });
+  test.use({ apiLog: { format: 'verbose', curl: true }, browserLog: { redact: { values: [VALUE_CANARY] } } });
 
   test(TITLE_QUERY, async ({ request }) => {
     await send(request);

@@ -12,7 +12,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Guides',
       collapsed: false,
-      items: ['api-logging', 'browser-logging', 'reporter-attachments', 'redaction-security', 'ci-recipes'],
+      items: ['api-logging', 'compact-output', 'browser-logging', 'reporter-attachments', 'redaction-security', 'ci-recipes'],
     },
     {
       type: 'category',

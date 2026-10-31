@@ -7,6 +7,10 @@ description: Log Playwright APIRequestContext requests and responses, with optio
 
 API logging prints every HTTP call made through Playwright's `APIRequestContext` (`request.get`, `post`, `put`, `patch`, `delete`, `head` and `fetch`). It is configured with the `apiLog` option.
 
+:::info Compact is the default since 0.4.0
+This page describes the line-by-line output, `apiLog: { format: 'verbose' }`. The default output, one line per call with detail only where a test failed, is described in [Compact output & the reporter](./compact-output.mdx). Options such as `curl`, `curlFormat`, redaction and `sink` apply to both formats.
+:::
+
 ## Two ways to turn it on
 
 <Tabs groupId="api-mode">

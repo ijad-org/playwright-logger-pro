@@ -1,3 +1,4 @@
+import apiCompact from './api-compact.ansi';
 import apiPost from './api-post.ansi';
 import apiFailure from './api-failure.ansi';
 import apiRefused from './api-refused.ansi';
@@ -7,6 +8,7 @@ import browserLive from './browser-live.ansi';
 
 /** Real, coloured output of the library (regenerate with scripts/gen-doc-samples.mjs). */
 export const samples = {
+  'api-compact': apiCompact,
   'api-post': apiPost,
   'api-failure': apiFailure,
   'api-refused': apiRefused,

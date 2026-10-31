@@ -1,0 +1,87 @@
+---
+title: Compact output & the reporter
+description: One line per API call and detail only where something went wrong. Reporter setup, options, colours, ordering with the list reporter, and the curl.sh replay script.
+---
+
+# Compact output & the reporter
+
+Since 0.4.0 an API call prints **one line**, and a request that went wrong gets a detail block **directly under it**, but only when its test failed.
+
+<TerminalOutput sample="api-compact" title="npx playwright test · the output of npm run demo" />
+
+## Set it up
+
+Register the reporter **after** `list`, so its lines follow each result line:
+
+```ts title="playwright.config.ts"
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [['list'], ['playwright-logger-pro/reporter', { /* options */ }]],
+});
+```
+
+The `test` fixture (`playwright-logger-pro/fixtures`) records each call of a test, masked, and attaches `playwright-logger-pro.json` (plus the `curl*.sh` scripts). The reporter reads it when the test ends and prints it. Without the reporter the fixture prints the same lines itself, above the result line, and no total.
+
+## The request line
+
+```text
+    METHOD STATUS  URL                                                   TIMING
+```
+
+- The method is padded to 7 columns; the status is 3 characters, a **chip** (background colour, no extra characters) for 4xx (yellow), 5xx and network errors (red, shown as `ERR`).
+- The host is dimmed, the path is not. Masked values are `***`.
+- The timing ends at `timeColumn` (82). A call of at least `slowThresholdMs` (1000) shows `▲ 1.83s`.
+- Past the terminal width, the middle of the **query string** is replaced by `…`. The host and the path are never shortened.
+
+## The detail block
+
+A request with status >= 400, or no response, gets a `│` block when its test failed (`details: 'failed-tests'`). A 404 in a passing negative test keeps its chip and gets no block.
+
+- First line: `← 404 Not Found  {"error":"order not found"}`, the body as one line (JSON minified, text its first line), cut at `bodyPreviewChars` with `…`. A network error shows `← ECONNREFUSED  connect ECONNREFUSED 127.0.0.1:9`.
+- With `curl: '5xx'` (the default: 5xx and network errors) it adds the curl command and `↳ replay: curl.sh attached to the HTML report`.
+
+## The curl.sh replay script
+
+The attachment never holds a secret. Every masked value becomes an environment variable named after its key:
+
+```bash title="curl.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+: "${TOKEN:?export TOKEN first}"
+: "${AUTHORIZATION:?export AUTHORIZATION first}"
+: "${CARD_TOKEN:?export CARD_TOKEN first}"
+
+curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR' \
+  -H 'Authorization: '"${AUTHORIZATION}" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"cartId":"c_812","cardToken":"'"${CARD_TOKEN}"'"}'
+```
+
+`export` the variables, then run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. A test with several curls gets `curl-{n}-{METHOD}-{lastPathSegment}.sh`. A test that passed gets no script unless `details: 'always'`. Two masked values with the same key name share one variable.
+
+## Masking
+
+The mask is always `***`, never the length of the value. The built-in lists are listed in [Configuration](./configuration.mdx#apilog-options); add yours with `mask: { headers, query, bodyKeys }` (merged with them, and with the older `redactHeaders`, `redactQueryParams` and `redactBodyKeys`). A whole header value is masked, `Bearer` included.
+
+## Colours, CI and ASCII {#colours}
+
+- The default `theme: 'ansi'` uses bold plus the 16 basic colours, so it reads on dark and light terminals. `'dark'` and `'light'` are true-colour palettes.
+- Colours follow the rules of [`curlFormat.colors: 'auto'`](./configuration.mdx#curlformat): none on CI, with `NO_COLOR`, `FORCE_COLOR=0` or `TERM=dumb`, or when the output is not a terminal. `FORCE_COLOR` alone does not colour CI logs. `colors: true` (reporter) or `curlFormat.colors: true` (fixture) forces them.
+- Without colours the status column is 5 wide so chips still stand out: ` 200 ` and `[404]`.
+- `ascii: true` (automatic on legacy Windows consoles) swaps `│ ← ▲ ↳` for `| <- ^ ->`.
+
+## The list reporter and terminals {#ordering}
+
+Printing from the worker with `console.log` cannot produce this layout: worker output reaches the terminal before the result line and interleaves between parallel tests. That is why a reporter in the runner process does the printing.
+
+The list reporter behaves differently in a terminal and without one, and the reporter handles both:
+
+- **No terminal (CI, a pipe), any number of workers:** the list reporter prints each result line when its test ends. Without colours it writes through a stream wrapper that finishes a line on the next tick, so the reporter waits one `setImmediate` before printing, and the lines sit right under the result line. If several tests end in that same tick, their blocks carry a title line.
+- **Terminal, one worker:** the list reporter rewrites its line in place, counting the rows it printed. Nothing runs in parallel, so the lines go out at once, right under the result line.
+- **Terminal, several workers:** extra lines printed while another test is still running shift those rows, and the next rewrite lands on the wrong line, garbling the output. So the lines are **held until no test is running**, then printed with a title line (`✓  [chromium] › cart.spec.ts:8:5 › adds product`), at the latest at the end of the run. Nothing is garbled, but with many workers most blocks come after the result lines instead of under them.
+- With `NO_COLOR` set in a terminal, Playwright's list reporter strips its own cursor movements and glues its lines together; that is Playwright's behaviour, with or without this package.
+
+## Keeping the old output
+
+`format: 'verbose'` prints the 0.3 output (request, headers, bodies, response, curl) live, as before. See [Migration](./migration.mdx#from-03-to-04).

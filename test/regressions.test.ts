@@ -109,7 +109,7 @@ after(async () => {
 
 function logged(config: Parameters<typeof wrapRequestContext>[1] = {}) {
   const lines: string[] = [];
-  const api = wrapRequestContext(ctx, { colors: false, curl: true, ...config, sink: (l) => lines.push(l) });
+  const api = wrapRequestContext(ctx, { format: 'verbose', colors: false, curl: true, ...config, sink: (l) => lines.push(l) });
   return { api, lines };
 }
 
@@ -289,7 +289,7 @@ describe('PCL-04: colors: true forces ANSI whatever the environment says', () =>
     ];
     for (const env of envs) {
       const lines: string[] = [];
-      const api = withEnv(env, () => wrapRequestContext(ctx, { colors: true, sink: (l) => lines.push(l) }));
+      const api = withEnv(env, () => wrapRequestContext(ctx, { format: 'verbose', colors: true, sink: (l) => lines.push(l) }));
       await api.get('/echo');
       assert.match(lines[0], ANSI, JSON.stringify(env));
       assert.match(lines.find((l) => l.startsWith('\u001b[34m←')) ?? '', ANSI, JSON.stringify(env));
@@ -338,7 +338,7 @@ describe('PCL-05: options explicitly set to undefined fall back to their default
     const lines: string[] = [];
     console.log = (line: string) => void lines.push(line);
     try {
-      await wrapRequestContext(ctx, { colors: false, sink: undefined, maxBodyLength: undefined }).get('/echo');
+      await wrapRequestContext(ctx, { format: 'verbose', colors: false, sink: undefined, maxBodyLength: undefined }).get('/echo');
     } finally {
       console.log = original;
     }
@@ -435,7 +435,7 @@ describe('PCL-09: context headers and cookies are reflected in logs and curl', (
 
       // Default redaction: present but masked.
       const lines: string[] = [];
-      const api = wrapRequestContext(own, {
+      const api = wrapRequestContext(own, { format: 'verbose',
         colors: false, curl: true, baseURL, extraHTTPHeaders, sink: (l) => lines.push(l),
       });
       await api.get('/echo', { headers: { 'x-ctx': 'call' } });
@@ -449,7 +449,7 @@ describe('PCL-09: context headers and cookies are reflected in logs and curl', (
 
       // Without redaction the replay sends what the original request sent.
       const raw: string[] = [];
-      const unredacted = wrapRequestContext(own, {
+      const unredacted = wrapRequestContext(own, { format: 'verbose',
         colors: false, curl: true, baseURL, extraHTTPHeaders, redactHeaders: [], replaceDefaultRedaction: true, sink: (l) => raw.push(l),
       });
       received.length = 0;
@@ -656,7 +656,9 @@ describe('PCL-17: README is accurate', () => {
 
   test('PCL-17 sample output matches what the logger prints', async () => {
     const readme = await readFile(readmePath, 'utf8');
-    const sample = readme.split('```')[1].replace(/^\n/, '').trimEnd().split('\n');
+    // the verbose-format sample (the first fence shows the compact output)
+    const fence = readme.split('```').find((block) => block.includes('→ POST /vegetables'));
+    const sample = (fence ?? '').replace(/^\n/, '').trimEnd().split('\n');
     const responseAt = sample.findIndex((l) => l.startsWith('← POST'));
     // Response headers print by default, between the ← line and the body.
     assert.match(sample[responseAt + 1], /^ {2}content-type: application\/json$/);
