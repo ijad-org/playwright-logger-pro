@@ -354,9 +354,10 @@ export default function SearchBar(): ReactNode {
           />
         </svg>
         <span className={styles.triggerText}>Search</span>
-        <kbd className={styles.chip} aria-hidden="true">
-          {mac ? '⌘K' : 'Ctrl K'}
-        </kbd>
+        <span className={styles.keys} aria-hidden="true">
+          <kbd className={styles.key}>{mac ? '⌘' : 'Ctrl'}</kbd>
+          <kbd className={styles.key}>K</kbd>
+        </span>
       </button>
       {isBrowser && open && <SearchDialog onClose={hide} returnFocus={returnTo.current} />}
     </>

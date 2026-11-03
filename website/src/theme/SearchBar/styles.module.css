@@ -25,7 +25,6 @@
   flex: none;
 }
 
-.chip,
 .footer kbd,
 .close kbd {
   padding: 0.05rem 0.4rem;
@@ -39,13 +38,40 @@
   line-height: 1.4;
 }
 
+.keys {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.key {
+  min-width: 1.4rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid rgb(99 102 241 / 0.28);
+  border-radius: 0.3rem;
+  background: rgb(99 102 241 / 0.1);
+  box-shadow: 0 1px 0 rgb(99 102 241 / 0.25);
+  color: #4f46e5;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+
+:global([data-theme='dark']) .key {
+  border-color: rgb(129 140 248 / 0.35);
+  background: rgb(129 140 248 / 0.16);
+  box-shadow: 0 1px 0 rgb(129 140 248 / 0.3);
+  color: #c7d2fe;
+}
+
 .triggerText {
   padding-right: 0.5rem;
 }
 
 @media (max-width: 996px) {
   .triggerText,
-  .chip {
+  .keys {
     display: none;
   }
   .trigger {
