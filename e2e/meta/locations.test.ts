@@ -4,6 +4,17 @@ import * as path from 'node:path';
 import { runMeta } from './run';
 
 const SPEC = 'locations.spec.ts';
+const PACKAGE_ROOT = path.resolve(__dirname, '..', '..');
+const slashed = (p: string): string => p.replace(/\\/g, '/');
+/**
+ * Our own frames, by location: this checkout's `src/` and `dist/`, or an installed copy under
+ * `node_modules/`. Never by the package name alone, which is also the checkout's folder name.
+ */
+const OWN_FRAME_DIRS = [path.join(PACKAGE_ROOT, 'src'), path.join(PACKAGE_ROOT, 'dist')].map((d) => slashed(d) + '/');
+const isOwnFrame = (line: string): boolean => {
+  const l = slashed(line);
+  return OWN_FRAME_DIRS.some((d) => l.includes(d)) || l.includes('/node_modules/playwright-logger-pro/');
+};
 const isSpec = (file?: string): boolean => typeof file === 'string' && path.basename(file) === SPEC;
 
 const run = runMeta(['--grep', 'browser action fails|request fails|request network error']);
@@ -19,8 +30,7 @@ for (const name of ['browser action fails', 'request fails', 'request network er
       if (e.file !== undefined) assert.ok(isSpec(e.file), `error located at ${e.file}`);
       const firstFrame = (e.stack ?? '').split('\n').find((l) => /^\s+at /.test(l)) ?? '';
       assert.ok(firstFrame.includes(SPEC), `first stack frame should be the spec, got: ${firstFrame}`);
-      assert.ok(!/playwright-logger-pro|[\\/]src[\\/](browser|fixtures|wrapRequestContext)/.test(e.stack ?? ''),
-          'no library frames in the error stack');
+      assert.ok(!(e.stack ?? '').split('\n').some(isOwnFrame), 'no library frames in the error stack');
     }
   });
 }

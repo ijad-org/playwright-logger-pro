@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { applyHygiene, scrubOwnFrames } from '../src/browser/stackHygiene';
 import type { HygieneDeps } from '../src/browser/stackHygiene';
 import { LIB_DIR } from '../src/libDir';
+import { isLibraryFile, pickCallSite } from '../src/browser/callSite';
 import { getRegistry } from '../src/browser/registry';
 
 function deps(modules: Record<string, unknown>, playwrightRoot?: string): HygieneDeps {
@@ -89,4 +90,26 @@ test('scrubOwnFrames removes our frames from error stacks (fallback) and never t
 test('LIB_DIRS always includes LIB_DIR; dist builds also cover the source-mapped ../src path', async () => {
   const { LIB_DIRS } = await import('../src/libDir');
   assert.ok(LIB_DIRS.includes(LIB_DIR));
+});
+
+test('user frames survive when the checkout is itself named playwright-logger-pro (own frames are found by directory, not by name)', () => {
+  const root = '/home/dev/playwright-logger-pro';
+  const dirs = [`${root}/dist/`, `${root}/src/`];
+  const spec = `${root}/e2e/specs/a.spec.ts`;
+  const stack = [
+    'Error: boom',
+    `    at wrapped (${root}/src/browser/session.ts:10:3)`,
+    `    at Page.goto (${root}/dist/fixtures.js:5:1)`,
+    `    at ${spec}:7:9`,
+  ].join('\n');
+
+  assert.equal(isLibraryFile(spec, dirs), false);
+  assert.equal(isLibraryFile(`${root}/src/browser/session.ts`, dirs), true);
+  assert.deepEqual(pickCallSite(stack, dirs), { file: spec, line: 7, column: 9 });
+
+  const err = new Error('boom');
+  err.stack = stack;
+  scrubOwnFrames(err, dirs);
+  assert.ok(err.stack.includes(`at ${spec}:7:9`), 'the spec frame is kept');
+  assert.ok(!err.stack.includes(`${root}/src/`) && !err.stack.includes(`${root}/dist/`), 'our frames are dropped');
 });
