@@ -5,6 +5,19 @@
 ### Changed
 
 - Docs only, no behaviour change: `curl: 'always'` is now described as "every call gets a curl in `curl*.sh` and the JSON attachment". In compact output the console prints curls only under failed calls (status >= 400 or a network error), as in 0.4.0.
+- Docs: the *From 0.3 to 0.4* section of the migration page is rewritten (below), and the docs home page no longer says that API logging prints everything live and has no curl.
+
+### Upgrading from 0.3 to 0.4
+
+0.4.0 changed defaults. Nothing needs to change for the code to run, but the output and some logged values differ:
+
+- **Compact is the default output.** An API call prints one line, and a failed request gets a `│` block under it when its test failed. Register the reporter after `list` (`reporter: [['list'], ['playwright-logger-pro/reporter']]`) to get the layout and the total line; without it the fixture prints the lines itself.
+- **Restore the 0.3 output with `apiLog: { format: 'verbose' }`.** That brings back headers, bodies, response, curl and the `#!/bin/sh` `curl.sh`, exactly as in 0.3.
+- **More values are masked by default** (merged with your own lists; `replaceDefaultRedaction: true` drops them; also in `format: 'verbose'`). Added in 0.4.0, on top of the 0.3 lists: headers `proxy-authorization` and `x-auth-token`; query parameters `refresh_token`, `key`, `signature` and `sig`; and JSON/form body keys `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin`, `access_token`, `refresh_token`, `api_key` and `card_number` (the default list was empty). A response field called `token` or `password` now shows `***` in the log.
+- **`curl` has a default.** In compact output it is `'5xx'` (it was `false`): a call with status >= 500 or a network error gets a curl, printed under it when its test failed, and a `curl*.sh` script attached to the report. A 4xx gets its `←` block without a curl; use `curl: '4xx+'` for that, or `'never'` to switch curls off. `format: 'verbose'` keeps `false`. `curl` also accepts `'5xx'`, `'4xx+'`, `'always'` and `'never'`; `true`, `false` and `'on-failure'` still work (in compact: `'always'`, `'never'`, `'4xx+'`).
+- **`curl: 'always'`** gives every call a curl in its script and in the `playwright-logger-pro.json` attachment (scripts are attached for a failed test, or with `details: 'always'`). The console prints a curl only under failed calls.
+
+See *From 0.3 to 0.4* in the migration page of the docs.
 
 ## [0.4.0] - 2026-10-31
 

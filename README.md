@@ -204,6 +204,8 @@ The compact output follows the colour rules of [`curlFormat.colors: 'auto'`](#wh
 
 ### Verbose format (the 0.3 output)
 
+Upgrading from 0.3? See [From 0.3 to 0.4](https://ijad-org.github.io/playwright-logger-pro/docs/migration#from-03-to-04): compact is the default, more keys are masked and `curl` defaults to `'5xx'`.
+
 `apiLog: { format: 'verbose' }` prints every call as before, live: request line and body, response line, headers, body and (with `curl`) the curl:
 
 ```
