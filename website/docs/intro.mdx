@@ -76,7 +76,7 @@ The request is logged live, with colours, as in the sample above. Nothing is pri
 
 | | Default |
 | --- | --- |
-| API logging | On. Every request and response is printed as it happens, with headers and bodies (bodies cut at 2000 characters). No curl. |
+| API logging | On, compact. One line per call; the response body and, for a 5xx or a network error (`curl: '5xx'`), the curl appear under the failed calls of a failed test. `apiLog: { format: 'verbose' }` prints everything live, as in 0.3. See [From 0.3 to 0.4](./migration.mdx#from-03-to-04). |
 | Browser logging | On, quiet. The timeline is printed and attached to the report only when a test fails. |
 | Colours | On under `playwright test` (it sets `FORCE_COLOR` for its workers). `NO_COLOR` turns them off. Files and attachments are always plain text. |
 | Redaction | On. See [Redaction & security](./redaction-security.mdx). |
