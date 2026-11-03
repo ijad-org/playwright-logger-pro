@@ -190,11 +190,26 @@ function replayLine(call: CallRecord, style: Style, sym: Symbols): string {
   return style.gray(`${sym.replay} replay: `) + style.strong(call.curlFile as string) + style.gray(' attached to the HTML report');
 }
 
-/** The `│` block that explains a failed call, one string per line. */
+/** The curl rows of a block and, when a script was attached, its replay line. */
+function curlRows(call: CallRecord, bar: string, style: Style, sym: Symbols): string[] {
+  const lead = `${INDENT}${bar} `;
+  const rows = (call.curl as string).split('\n').map((row) => `${lead}${paintCurlLine(row, style)}`);
+  if (call.curlFile) rows.push(`${INDENT}${bar}`, `${lead}${replayLine(call, style, sym)}`);
+  return rows;
+}
+
+/**
+ * The `│` block under a call, one string per line. A failed call (status >= 400 or no response)
+ * gets its response and, when `curl` asks for it, its curl. A successful call gets a block only
+ * with `curl: 'always'`: just the curl, under a grey gutter.
+ */
 export function renderDetail(call: CallRecord, opts: RenderOptions, style: Style = makeStyle(opts.colors, opts.theme)): string[] {
   const severity = severityOf(call);
-  if (!severity) return [];
   const sym = symbolsFor(opts.ascii);
+  if (!severity) {
+    if (!call.curl || !wantsCurl(opts.curl, call.status)) return [];
+    return curlRows(call, style.gray(sym.gutter), style, sym);
+  }
   const bar = style.gutter(severity)(sym.gutter);
   const lead = `${INDENT}${bar} `;
   const lines: string[] = [];
@@ -209,18 +224,19 @@ export function renderDetail(call: CallRecord, opts: RenderOptions, style: Style
 
   if (call.curl && wantsCurl(opts.curl, call.status)) {
     lines.push(`${INDENT}${bar}`);
-    for (const row of call.curl.split('\n')) lines.push(`${lead}${paintCurlLine(row, style)}`);
-    if (call.curlFile) {
-      lines.push(`${INDENT}${bar}`);
-      lines.push(`${lead}${replayLine(call, style, sym)}`);
-    }
+    lines.push(...curlRows(call, bar, style, sym));
   }
   return lines;
 }
 
-/** Whether the detail block of `call` is printed. */
-export function showsDetail(call: CallRecord, opts: Pick<RenderOptions, 'details'>, testFailed: boolean): boolean {
-  if (!isErrorCall(call) || opts.details === 'never') return false;
+/**
+ * Whether the block of `call` is printed: a failed call always has one, a successful call only
+ * when it carries a curl that `curl` asks for (`'always'`). Either way `details` decides in which
+ * tests blocks appear: `'failed-tests'` (default), `'always'` or `'never'`.
+ */
+export function showsDetail(call: CallRecord, opts: Pick<RenderOptions, 'details' | 'curl'>, testFailed: boolean): boolean {
+  if (opts.details === 'never') return false;
+  if (!isErrorCall(call) && !(call.curl && wantsCurl(opts.curl, call.status))) return false;
   return opts.details === 'always' || testFailed;
 }
 

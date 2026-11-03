@@ -1,6 +1,6 @@
 import { describeValue, warnOnce } from '../warn';
 
-/** What the compact output prints for a call that went wrong; see `ApiLoggerConfig.curl`. */
+/** Which calls get a curl in the compact output; see `ApiLoggerConfig.curl`. */
 export type CurlMode = '5xx' | '4xx+' | 'always' | 'never';
 /** When the `│` detail block is printed under a request line. */
 export type DetailsMode = 'failed-tests' | 'always' | 'never';
@@ -19,8 +19,9 @@ export interface CompactDisplayConfig {
    */
   timeColumn?: number | 'auto';
   /**
-   * When a request with status >= 400 or a network error gets its `│` block:
-   * `'failed-tests'` (default) only when its test failed, `'always'`, or `'never'`.
+   * In which tests the `│` blocks are printed (the block of a request with status >= 400 or a
+   * network error, and with `curl: 'always'` the curl of every other call):
+   * `'failed-tests'` (default) only when the test failed, `'always'`, or `'never'`.
    */
   details?: DetailsMode;
   /** Response body preview length in the detail block, in characters (default 200). */

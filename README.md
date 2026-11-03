@@ -124,7 +124,7 @@ const ctx = wrapRequestContext(
     await request.newContext({ baseURL: 'https://api.example.com' }),
     { curl: 'always' },
 );
-const res = await ctx.get('/users'); // prints its line (and, for a failed call, its block) at once
+const res = await ctx.get('/users'); // prints its line and, with curl: 'always', its curl at once
 ```
 
 The wrapper is a transparent proxy: everything on `APIRequestContext` (including `dispose()` and `storageState()`) keeps working; only the HTTP verb methods gain logging.
@@ -134,6 +134,15 @@ The wrapper is a transparent proxy: everything on `APIRequestContext` (including
 An API call prints one line: `METHOD STATUS  URL  TIMING`. The host is dimmed, masked values are `***`, a call of at least `slowThresholdMs` shows `▲ 1.83s`, and a 4xx, 5xx or network error (`ERR`) has a coloured **chip** in the status column (no extra characters, so columns do not shift). Past the terminal width the middle of the **query string** is replaced by `…`; the host and the path never are.
 
 A request with status >= 400, or no response, gets a `│` block directly under its line **when its test failed** (`details: 'failed-tests'`, the default). A 404 in a passing negative test keeps its chip and gets no block. The block starts with `← 404 Not Found  {…}`, the response body as one line (JSON minified, text its first line, cut at `bodyPreviewChars` with `…`, `<empty body>`, or `<binary 12.4 KB application/pdf>`); a network error shows `← ECONNREFUSED  connect ECONNREFUSED 127.0.0.1:9`. With `curl: '5xx'` (the default) a 5xx or network error also shows its curl and `↳ replay: curl.sh attached to the HTML report`.
+
+With `curl: 'always'` a successful call gets a block too, holding just its curl (and its replay line) under a grey `│`, so every call of a failed test can be replayed, including a 200 whose body broke an assertion. Those blocks follow the same `details` rule: printed when the test failed, in every test with `details: 'always'`, never with `details: 'never'`.
+
+```
+    GET    200  https://api.shop.test/v1/products?page=2&limit=20            142ms
+    │ curl 'https://api.shop.test/v1/products?page=2&limit=20'
+    │
+    │ ↳ replay: curl-1-GET-products.sh attached to the HTML report
+```
 
 ### Reporter
 
@@ -147,11 +156,11 @@ The `test` fixture records every call of a test (masked) in a `playwright-logger
 | --- | --- | --- |
 | `slowThresholdMs` | `1000` | A call at least this slow gets `▲` and a yellow time, and counts in the total. |
 | `timeColumn` | `82` | Column where the timing ends; `'auto'` fits the terminal width. |
-| `details` | `'failed-tests'` | `'failed-tests'`, `'always'` or `'never'`. |
+| `details` | `'failed-tests'` | In which tests the `│` blocks are printed: `'failed-tests'`, `'always'` or `'never'`. |
 | `bodyPreviewChars` | `200` | Preview length. |
 | `theme` | `'ansi'` | `'ansi'` (the 16 basic colours of your terminal theme, readable on dark and light), `'dark'` or `'light'` (true colour, the palette of the screenshots). |
 | `ascii` | `false` | ASCII symbols (`\|` `<-` `^` `->` `ok` `x`). Automatic on legacy Windows consoles (no `WT_SESSION`). |
-| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls show their curl **in their detail block**. Only calls with status >= 400 or a network error have a block, so `'always'` never prints a curl for a successful call (it is still recorded and attached). |
+| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls show their curl in a `│` block. `'always'` includes successful calls. `details` decides in which tests the blocks appear. |
 | `colors` | `'auto'` | `true` forces colours; see [Colours](#compact-colours-ci-and-ascii). |
 
 The same display options (`slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`) work in `apiLog`; the fixture hands them to the reporter in the JSON attachment, and the reporter's own options win.
@@ -176,7 +185,7 @@ curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR'
 
 `export` the variables (the whole header value, `Bearer` included) and run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. Two masked values with the same key name share one variable. `curlFormat.file: false` turns the scripts off. Headers curl adds itself (`host`, `content-length`, `connection`, `accept-encoding`) are left out; `-X GET` is left out of a GET without a body.
 
-**`curl: 'always'` and the console.** It records a curl for every call (in the `playwright-logger-pro.json` attachment, and as `curl*.sh` files when the test failed or `details: 'always'`), but the console prints a curl only inside the detail block, which exists only for calls with status >= 400 or a network error. A successful call never prints one; open the attachment or script to get it.
+**The console and the scripts match.** A call shows its curl on the console exactly when it gets a `curl*.sh`: `curl` picks the calls (`'always'` is every call, successful ones included) and `details` picks the tests (failed ones by default). In a passing test with the default `details`, the curls are still recorded in the `playwright-logger-pro.json` attachment.
 
 ### Masking
 
@@ -410,7 +419,7 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` (`false` with `format: 'verbose'`) | Which calls get a curl: `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'` (= `true`), `'never'` (= `false`); legacy `'on-failure'` is any non-2xx. |
 | `slowThresholdMs` | `number` | `1000` | A call at least this slow gets `▲` and counts in the total. |
 | `timeColumn` | `number \| 'auto'` | `82` | Column where the timing ends. |
-| `details` | `'failed-tests' \| 'always' \| 'never'` | `'failed-tests'` | When a failed request gets its `│` block. |
+| `details` | `'failed-tests' \| 'always' \| 'never'` | `'failed-tests'` | In which tests the `│` blocks are printed: the block of a failed request, and with `curl: 'always'` the curl of every other call. |
 | `bodyPreviewChars` | `number` | `200` | Response preview length in the block. |
 | `theme` | `'ansi' \| 'dark' \| 'light'` | `'ansi'` | 16 basic colours of your terminal, or a true-colour palette. |
 | `ascii` | `boolean` | `false` (`true` on legacy Windows consoles) | ASCII instead of Unicode symbols. |

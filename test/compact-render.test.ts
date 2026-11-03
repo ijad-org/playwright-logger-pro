@@ -280,9 +280,29 @@ describe('the detail block', () => {
     assert.deepEqual([rows('5xx', c404), rows('5xx', c500)], [0, 1]);
     assert.deepEqual([rows('4xx+', c404), rows('4xx+', c500)], [1, 1]);
     assert.deepEqual([rows('never', c404), rows('never', c500)], [0, 0]);
-    assert.equal(rows('always', cart[0] as CallRecord), 0, 'a 2xx has no detail block to hold it');
+    assert.equal(rows('always', cart[0] as CallRecord), 1, "'always' prints the curl of a 2xx too");
+    assert.deepEqual([rows('5xx', cart[0] as CallRecord), rows('4xx+', cart[0] as CallRecord)], [0, 0]);
     // without an attached script there is no replay line
     assert.ok(!renderCalls([{ ...withCurl(c500), curlFile: undefined }], opts({ colors: false }), true).join('\n').includes('replay'));
+  });
+
+  test("curl: 'always' gives a successful call a block with just its curl, in the tests details allows", () => {
+    const ok: CallRecord = { ...(cart[0] as CallRecord), curl: "curl 'https://x.test/a' \\\n  -H 'Accept: */*'" };
+    const block = (over: Partial<RenderOptions>, failed: boolean) =>
+      renderCalls([ok], opts({ curl: 'always', colors: false, ...over }), failed).map(strip).slice(1);
+    assert.deepEqual(block({}, true), ["    │ curl 'https://x.test/a' \\", "    │   -H 'Accept: */*'"], 'no ← line for a success');
+    assert.deepEqual(block({}, false), [], "a passing test shows no blocks with details: 'failed-tests'");
+    assert.equal(block({ details: 'always' }, false).length, 2);
+    assert.deepEqual(block({ details: 'never' }, true), []);
+    assert.deepEqual(renderCalls([ok], opts({ curl: '5xx', colors: false }), true).length, 1, 'only always reaches a 2xx');
+    // with an attached script, the replay line follows after a spacer
+    const withFile = renderCalls([{ ...ok, curlFile: 'curl-1-GET-a.sh' }], opts({ curl: 'always', colors: false }), true).map(strip);
+    assert.deepEqual(withFile.slice(3), ['    │', '    │ ↳ replay: curl-1-GET-a.sh attached to the HTML report']);
+    // the gutter of a success is grey, not a severity colour
+    const dark = renderCalls([ok], opts({ curl: 'always', colors: true, theme: 'dark' }), true);
+    assert.ok(dark[1]?.startsWith('    \u001b[38;2;125;133;144m│'), JSON.stringify(dark[1]));
+    // a call without a recorded curl gets no empty block
+    assert.equal(renderCalls([cart[0] as CallRecord], opts({ curl: 'always' }), true).length, 1);
   });
 
   test('a network failure: ERR chip, the code and message, curl', () => {

@@ -77,9 +77,11 @@ export interface ApiLoggerConfig extends CompactDisplayConfig {
   colors?: boolean;
   /**
    * Which calls get their equivalent curl command (and a `curl.sh` attachment).
+   * In compact output the curl is printed in the `│` block under the call, in the tests that
+   * `details` shows blocks for (by default, failed tests).
    * - '5xx' (default with `format: 'compact'`): status >= 500 and network errors
    * - '4xx+': status >= 400 and network errors
-   * - 'always' (same as true): every call
+   * - 'always' (same as true): every call, successful ones included
    * - 'never' (same as false; the default with `format: 'verbose'`)
    * - 'on-failure' (legacy): any status that is not 2xx, and network errors
    * Any other value is ignored with a console warning.
