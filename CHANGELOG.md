@@ -1,11 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.1] - 2026-11-03
+
+No change to the published code or its behaviour.
+
+### Fixed
+
+- The `step and error locations point at the spec file` meta tests (`pnpm test:meta`) failed in a checkout whose folder is named `playwright-logger-pro`: they took the package name anywhere in a stack frame for a frame of the library, and the spec's own path contained it. The logger was not at fault (it finds its own frames by their directory, `src/` or `dist/`, and the error stacks were clean). The test now looks for the package's `src/` and `dist/` directories and for `node_modules/playwright-logger-pro/`, and a unit test checks that a user frame survives in a checkout with that name.
 
 ### Changed
 
-- Docs only, no behaviour change: `curl: 'always'` is now described as "every call gets a curl in `curl*.sh` and the JSON attachment". In compact output the console prints curls only under failed calls (status >= 400 or a network error), as in 0.4.0.
-- Docs: the *From 0.3 to 0.4* section of the migration page is rewritten (below), and the docs home page no longer says that API logging prints everything live and has no curl.
+- README: the dark and light screenshots are plain Markdown images, so they render on the npm package page.
+- Docs only: `curl: 'always'` is described as "every call gets a curl in `curl*.sh` and the JSON attachment". In compact output the console prints curls only under failed calls (status >= 400 or a network error), as in 0.4.0.
+- Docs: the *From 0.3 to 0.4* section of the migration page is rewritten (the note below), and the docs home page no longer says that API logging prints everything live and has no curl.
+- Repository: the unused `npm-publish` GitHub environment is removed. Releases use npm trusted publishing and name no environment.
 
 ### Upgrading from 0.3 to 0.4
 
