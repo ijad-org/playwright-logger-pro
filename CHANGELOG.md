@@ -4,8 +4,7 @@
 
 ### Changed
 
-- **`curl: 'always'` prints the curl of successful calls too.** In 0.4.0 the compact output showed a curl only inside the block of a call with status >= 400 or a network error, so `'always'` printed the same as `'4xx+'` and its other curls were only in the attachments. Now a 2xx or 3xx call gets a block under its line holding just its curl (and `↳ replay` line) under a grey `│`. The blocks follow `details` like the others: printed when the test failed, in every test with `details: 'always'`, never with `details: 'never'`; without a test (`wrapRequestContext`) at once. A call now shows its curl on the console exactly when it gets a `curl*.sh`. `'5xx'`, `'4xx+'`, `'never'` and `format: 'verbose'` are unchanged.
-- The exported `renderDetail()` returns that block for a successful call with `curl: 'always'` (it returned nothing before).
+- Docs only, no behaviour change: `curl: 'always'` is now described as "every call gets a curl in `curl*.sh` and the JSON attachment". In compact output the console prints curls only under failed calls (status >= 400 or a network error), as in 0.4.0.
 
 ## [0.4.0] - 2026-10-31
 

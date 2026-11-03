@@ -41,17 +41,6 @@ A request with status >= 400, or no response, gets a `│` block when its test f
 - First line: `← 404 Not Found  {"error":"order not found"}`, the body as one line (JSON minified, text its first line), cut at `bodyPreviewChars` with `…`. A network error shows `← ECONNREFUSED  connect ECONNREFUSED 127.0.0.1:9`.
 - With `curl: '5xx'` (the default: 5xx and network errors) it adds the curl command and `↳ replay: curl.sh attached to the HTML report`.
 
-### Every call with `curl: 'always'`
-
-With `curl: 'always'` a successful call gets a block too: just its curl and replay line, under a grey `│`. So every call of a failed test can be replayed, including a 200 whose body broke an assertion. These blocks follow the same `details` rule as the others: printed when the test failed, in every test with `details: 'always'`, never with `details: 'never'`.
-
-```
-    GET    200  https://api.shop.test/v1/products?page=2&limit=20            142ms
-    │ curl 'https://api.shop.test/v1/products?page=2&limit=20'
-    │
-    │ ↳ replay: curl-1-GET-products.sh attached to the HTML report
-```
-
 ## The curl.sh replay script
 
 The attachment never holds a secret. Every masked value becomes an environment variable named after its key:
@@ -71,8 +60,8 @@ curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR'
 
 `export` the variables, then run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. A test with several curls gets `curl-{n}-{METHOD}-{lastPathSegment}.sh`. A test that passed gets no script unless `details: 'always'`. Two masked values with the same key name share one variable.
 
-:::note The console and the scripts match
-A call shows its curl on the console exactly when it gets a `curl*.sh`: `curl` picks the calls (`'always'` is every call, successful ones included) and `details` picks the tests (failed ones by default). In a passing test with the default `details`, the curls are still recorded in the `playwright-logger-pro.json` attachment.
+:::note What `curl: 'always'` means
+Every call gets a curl in its `curl*.sh` (attached when the test failed, or with `details: 'always'`) and in the `playwright-logger-pro.json` attachment. The console still prints a curl only under a failed call, with status >= 400 or a network error, so a successful call keeps its single line. Open the script or the attachment to replay a successful call.
 :::
 
 ## Masking

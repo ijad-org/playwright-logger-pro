@@ -119,27 +119,16 @@ describe('recording', () => {
     assert.equal(lines[1], '    │ ← 500 Internal Server Error  {"error":"boom","accessToken":"***"}');
   });
 
-  test("curl: 'always' prints the curl under successful calls of a failed test, and attaches their scripts", async () => {
+  test("curl: 'always' prints curls only under failed calls; every call still gets a script", async () => {
     const out = await run({ curl: 'always' }, async (api) => {
       await api.get('/ok');
       await api.get('/missing');
     });
     const lines = strip(out.printed).split('\n');
-    assert.match(lines[0] ?? '', /^ {4}GET {4} 200 {3}http/);
-    assert.match(lines[1] ?? '', /^ {4}│ curl 'http:\/\/127\.0\.0\.1:\d+\/ok'( \\)?$/, 'the curl sits right under the 200 line');
-    assert.ok(lines.includes('    │ ↳ replay: curl-1-GET-ok.sh attached to the HTML report'), lines.join('\n'));
-    assert.ok(lines.some((l) => l.startsWith('    │ ← 404 Not Found')));
+    assert.match(lines[0] ?? '', /^ {4}GET {4} 200 /);
+    assert.match(lines[1] ?? '', /^ {4}GET {4}\[404\] /, 'the 200 keeps its single line');
+    assert.ok(lines.slice(2).some((l) => l.startsWith("    │ curl 'http")), 'the 404 shows its curl');
     assert.deepEqual(out.scripts.map((s) => s.name), ['curl-1-GET-ok.sh', 'curl-2-GET-missing.sh']);
-  });
-
-  test("curl: 'always' in a passing test: no blocks unless details: 'always'", async () => {
-    const quiet = await run({ curl: 'always' }, (api) => api.get('/ok'), 'passed');
-    assert.equal(quiet.printed.split('\n').length, 1);
-    assert.equal(quiet.scripts.length, 0);
-    assert.ok(quiet.attachment?.calls[0]?.curl, 'still recorded in the JSON attachment');
-    const shown = await run({ curl: 'always', details: 'always' }, (api) => api.get('/ok'), 'passed');
-    assert.ok(strip(shown.printed).includes("    │ curl 'http"), shown.printed);
-    assert.equal(shown.scripts.length, 1);
   });
 
   test('a passing test prints the line of a 404 without a block', async () => {
