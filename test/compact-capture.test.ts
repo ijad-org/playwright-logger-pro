@@ -119,6 +119,18 @@ describe('recording', () => {
     assert.equal(lines[1], '    │ ← 500 Internal Server Error  {"error":"boom","accessToken":"***"}');
   });
 
+  test("curl: 'always' prints curls only under failed calls; every call still gets a script", async () => {
+    const out = await run({ curl: 'always' }, async (api) => {
+      await api.get('/ok');
+      await api.get('/missing');
+    });
+    const lines = strip(out.printed).split('\n');
+    assert.match(lines[0] ?? '', /^ {4}GET {4} 200 /);
+    assert.match(lines[1] ?? '', /^ {4}GET {4}\[404\] /, 'the 200 keeps its single line');
+    assert.ok(lines.slice(2).some((l) => l.startsWith("    │ curl 'http")), 'the 404 shows its curl');
+    assert.deepEqual(out.scripts.map((s) => s.name), ['curl-1-GET-ok.sh', 'curl-2-GET-missing.sh']);
+  });
+
   test('a passing test prints the line of a 404 without a block', async () => {
     const out = await run({}, (api) => api.get('/missing'), 'passed');
     assert.equal(out.printed.split('\n').length, 1);

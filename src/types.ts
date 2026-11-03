@@ -79,7 +79,8 @@ export interface ApiLoggerConfig extends CompactDisplayConfig {
    * Which calls get their equivalent curl command (and a `curl.sh` attachment).
    * - '5xx' (default with `format: 'compact'`): status >= 500 and network errors
    * - '4xx+': status >= 400 and network errors
-   * - 'always' (same as true): every call
+   * - 'always' (same as true): every call gets a curl and a `curl.sh`; in compact output the
+   *   console still prints curls only under failed calls (status >= 400 or a network error)
    * - 'never' (same as false; the default with `format: 'verbose'`)
    * - 'on-failure' (legacy): any status that is not 2xx, and network errors
    * Any other value is ignored with a console warning.

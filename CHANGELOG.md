@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Docs only, no behaviour change: `curl: 'always'` is now described as "every call gets a curl in `curl*.sh` and the JSON attachment". In compact output the console prints curls only under failed calls (status >= 400 or a network error), as in 0.4.0.
+
 ## [0.4.0] - 2026-10-31
 
 ### Added
