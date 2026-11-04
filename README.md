@@ -142,7 +142,7 @@ A request with status >= 400, or no response, gets a `│` block directly under 
 reporter: [['list'], ['playwright-logger-pro/reporter', { details: 'failed-tests', slowThresholdMs: 1000 }]],
 ```
 
-The `test` fixture records every call of a test (masked) in a `playwright-logger-pro.json` attachment and the replay scripts in `curl*.sh`; the reporter, in the runner process, prints them when the test ends and adds the total after Playwright's summary: `8 requests · 2 errors · 1 slow ≥1s` (a zero segment is left out; errors are status >= 400 plus network failures). Printing from the workers cannot give this layout, because worker output reaches the terminal before the result line and interleaves between parallel tests.
+The `test` fixture records every call of a test (masked) in a `playwright-logger-pro.json` attachment and, for a failed test (or with `details: 'always'`), the replay scripts in `curl*.sh`; the reporter, in the runner process, prints them when the test ends and adds the total after Playwright's summary: `8 requests · 2 errors · 1 slow ≥1s` (a zero segment is left out; errors are status >= 400 plus network failures). Printing from the workers cannot give this layout, because worker output reaches the terminal before the result line and interleaves between parallel tests.
 
 | Reporter option | Default | Description |
 | --- | --- | --- |
@@ -152,7 +152,7 @@ The `test` fixture records every call of a test (masked) in a `playwright-logger
 | `bodyPreviewChars` | `200` | Preview length. |
 | `theme` | `'ansi'` | `'ansi'` (the 16 basic colours of your terminal theme, readable on dark and light), `'dark'` or `'light'` (true colour, the palette of the screenshots). |
 | `ascii` | `false` | ASCII symbols (`\|` `<-` `^` `->` `ok` `x`). Automatic on legacy Windows consoles (no `WT_SESSION`). |
-| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls get a curl. The console prints a curl only under a failed call (status >= 400 or a network error); with `'always'` successful calls get theirs in `curl*.sh` and the JSON attachment, not on the console. |
+| `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls get a curl. The console prints a curl only under a failed call (status >= 400 or a network error); with `'always'` successful calls get theirs in the JSON attachment (and in `curl*.sh` when the test failed or with `details: 'always'`), not on the console. |
 | `colors` | `'auto'` | `true` forces colours; see [Colours](#compact-colours-ci-and-ascii). |
 
 The same display options (`slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`) work in `apiLog`; the fixture hands them to the reporter in the JSON attachment, and the reporter's own options win.
@@ -177,7 +177,7 @@ curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR'
 
 `export` the variables (the whole header value, `Bearer` included) and run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. Two masked values with the same key name share one variable. `curlFormat.file: false` turns the scripts off. Headers curl adds itself (`host`, `content-length`, `connection`, `accept-encoding`) are left out; `-X GET` is left out of a GET without a body.
 
-**What `curl: 'always'` means.** Every call gets a curl in its `curl*.sh` (attached when the test failed, or with `details: 'always'`) and in the `playwright-logger-pro.json` attachment. The console still prints a curl only under a failed call, with status >= 400 or a network error, so a successful call keeps its single line. Open the script or the attachment to replay a successful call.
+**What `curl: 'always'` means.** Every call gets a curl in the `playwright-logger-pro.json` attachment. Its `curl*.sh` script is attached only when the test failed or with `details: 'always'`. The console still prints a curl only under a failed call, with status >= 400 or a network error, so a successful call keeps its single line. Open the attachment (or, when there is one, the script) to replay a successful call.
 
 ### Masking
 
@@ -410,7 +410,7 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a no-op pass-through. |
 | `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR` for the log lines; the curl follows [its own rule](#when-the-curl-is-coloured)). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
 | `format` | `'compact' \| 'verbose'` | `'compact'` | One line per call and detail where it failed ([Compact output](#compact-output)), or the 0.3 output ([Verbose format](#verbose-format-the-03-output)). |
-| `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` (`false` with `format: 'verbose'`) | Which calls get a curl: `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'` (= `true`; every call gets a `curl*.sh`, but in compact output the console prints curls only under failed calls), `'never'` (= `false`); legacy `'on-failure'` is any non-2xx. |
+| `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` (`false` with `format: 'verbose'`) | Which calls get a curl: `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'` (= `true`; every call gets a curl in the `playwright-logger-pro.json` attachment; its `curl*.sh` script is attached only for a failed test or with `details: 'always'`; in compact output the console prints curls only under failed calls, status >= 400 or a network error), `'never'` (= `false`); legacy `'on-failure'` is any non-2xx. |
 | `slowThresholdMs` | `number` | `1000` | A call at least this slow gets `▲` and counts in the total. |
 | `timeColumn` | `number \| 'auto'` | `82` | Column where the timing ends. |
 | `details` | `'failed-tests' \| 'always' \| 'never'` | `'failed-tests'` | When a failed request gets its `│` block. |
