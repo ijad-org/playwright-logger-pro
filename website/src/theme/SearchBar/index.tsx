@@ -16,6 +16,7 @@ interface Item {
   id: string;
   href: string;
   label: ReactNode;
+  /** Small second line under the label: the section trail, or the page a content excerpt is from. */
   detail?: string;
   group?: string;
   glyph: string;
@@ -29,6 +30,13 @@ function isEditable(el: EventTarget | null): boolean {
 
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+}
+
+const ENTITIES: Record<string, string> = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#039;': "'"};
+
+/** Plain text of the escaped excerpt HTML the search plugin returns. */
+function plainText(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/&(?:amp|lt|gt|quot|#039);/g, (e) => ENTITIES[e] ?? e);
 }
 
 /** Wraps matches of `tokens` in <mark>. */
@@ -99,16 +107,24 @@ function SearchDialog({onClose, returnFocus}: {onClose: () => void; returnFocus:
       id: `${uid}-o${i}`,
       href: h.url,
       label:
-        h.kind === 'heading' ? (
+        h.kind === 'content' ? (
+          // The plugin escapes the text and adds the <mark> tags itself.
+          <span dangerouslySetInnerHTML={{__html: h.excerpt ?? ''}} />
+        ) : h.kind === 'heading' ? (
           <>
             {highlight(h.page, tokens)} <span className={styles.sep}>›</span> {highlight(h.heading ?? '', tokens)}
           </>
         ) : (
           highlight(h.page, tokens)
         ),
-      detail: h.trail || undefined,
-      glyph: h.kind === 'heading' ? '#' : '¶',
-      text: h.kind === 'heading' ? `${h.page} › ${h.heading}` : h.page,
+      detail: h.kind === 'content' ? [h.page, h.heading].filter(Boolean).join(' › ') : h.trail || undefined,
+      glyph: h.kind === 'content' ? '≡' : h.kind === 'heading' ? '#' : '¶',
+      text:
+        h.kind === 'content'
+          ? `${plainText(h.excerpt ?? '')} (${[h.page, h.heading].filter(Boolean).join(' › ')})`
+          : h.kind === 'heading'
+            ? `${h.page} › ${h.heading}`
+            : h.page,
     }));
   }, [trimmed, topics, hits, tokens, uid]);
 
@@ -250,8 +266,10 @@ function SearchDialog({onClose, returnFocus}: {onClose: () => void; returnFocus:
                     <span className={styles.glyph} aria-hidden="true">
                       {item.glyph}
                     </span>
-                    <span className={styles.label}>{item.label}</span>
-                    {item.detail && <span className={styles.detail}>{item.detail}</span>}
+                    <span className={styles.body}>
+                      <span className={clsx(styles.label, item.glyph === '≡' && styles.excerpt)}>{item.label}</span>
+                      {item.detail && <span className={styles.detail}>{item.detail}</span>}
+                    </span>
                   </a>
                 </li>
               </React.Fragment>

@@ -190,10 +190,30 @@
   font-weight: 700;
 }
 
-.label {
+.body {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
   min-width: 0;
-  overflow-wrap: anywhere;
+}
+
+/* Titles wrap between words only. A word that does not fit is clipped, not split. */
+.label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: normal;
+  word-break: normal;
+  line-height: 1.35;
+}
+
+.excerpt {
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  font-size: 0.9rem;
 }
 
 .label mark {
@@ -209,8 +229,11 @@
   color: var(--ifm-font-color-secondary);
 }
 
+/* One line under the label, cut with an ellipsis, so the label gets the full width. */
 .detail {
-  font-size: 0.8rem;
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

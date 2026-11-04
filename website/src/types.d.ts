@@ -15,3 +15,9 @@ declare module '@easyops-cn/docusaurus-search-local/dist/client/client/theme/sea
 declare module '@easyops-cn/docusaurus-search-local/dist/client/client/utils/proxiedGenerated' {
   export const Mark: (new (el: Element) => {unmark(): void; mark(keywords: string[], options?: object): void}) | null;
 }
+declare module '@easyops-cn/docusaurus-search-local/dist/client/client/utils/getStemmedPositions' {
+  export function getStemmedPositions(metadata: object, field: string): Array<[number, number]>;
+}
+declare module '@easyops-cn/docusaurus-search-local/dist/client/client/utils/highlightStemmed' {
+  export function highlightStemmed(content: string, positions: Array<[number, number]>, tokens: string[], maxLength?: number): string;
+}

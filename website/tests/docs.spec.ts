@@ -107,6 +107,41 @@ test.describe('search', () => {
     expect(page.url()).toContain('_highlight=');
   });
 
+  test('shows content excerpts with the matches highlighted and the page and section under them', async ({ page }) => {
+    await page.goto('docs/intro');
+    await ready(page);
+    await page.keyboard.press('Control+k');
+    await page.getByRole('combobox').fill('redact');
+    const excerpts = page.getByRole('listbox', { name: 'Search results' }).getByRole('option').filter({ has: page.locator('[class*=excerpt]') });
+    await expect(excerpts.first()).toBeVisible();
+    const first = excerpts.first();
+    // A sentence, not just a title, with the query highlighted ...
+    expect((await first.locator('[class*=excerpt]').innerText()).split(/\s+/).length).toBeGreaterThan(8);
+    await expect(first.locator('[class*=excerpt] mark').first()).toContainText(/redact/i);
+    // ... and where it comes from, small, under it.
+    await expect(first.locator('[class*=detail]')).toContainText(/\w/);
+  });
+
+  test('on a phone titles wrap between words and are never cut mid-word or pushed out of the row', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('docs/intro');
+    await ready(page);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    for (const query of ['redact', 'BrowserLoggerConfig']) {
+      await page.getByRole('combobox').fill(query);
+      await expect(page.getByRole('listbox', { name: 'Search results' }).getByRole('option').first()).toBeVisible();
+      const overflowing = await page.getByRole('option').evaluateAll((rows) =>
+        rows.flatMap((row) =>
+          [...row.querySelectorAll<HTMLElement>('[class*=label], [class*=detail]')]
+            .filter((el) => el.scrollWidth > el.clientWidth + 1 || getComputedStyle(el).overflowWrap === 'anywhere')
+            .map((el) => el.textContent),
+        ),
+      );
+      // overflow-wrap is normal and the box is not wider than its row: nothing is broken inside a word.
+      expect(overflowing, query).toEqual([]);
+    }
+  });
+
   test('Esc closes and returns focus; slash opens when not typing; Tab is trapped', async ({ page }) => {
     await page.goto('docs/intro');
     await ready(page);
