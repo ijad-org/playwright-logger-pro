@@ -13,6 +13,23 @@ test('home page renders', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'npm package' })).toBeVisible();
 });
 
+test.describe('install command', () => {
+  for (const width of [390, 360]) {
+    test(`is fully readable without scrolling at ${width}px and Copy still copies it`, async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('./');
+      const code = page.locator('[class*=install] code');
+      await expect(code).toContainText('npm i -D playwright-logger-pro');
+      expect(await code.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.getByRole('button', { name: 'Copy install command' }).click();
+      await expect(page.getByRole('button', { name: 'Copy install command' })).toHaveText('Copied');
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('npm i -D playwright-logger-pro');
+    });
+  }
+});
+
 test.describe('terminal sample', () => {
   const rgb = (hex: string) => {
     const n = parseInt(hex.slice(1), 16);
