@@ -232,9 +232,11 @@
 /* One line under the label, cut with an ellipsis, so the label gets the full width. */
 .detail {
   overflow: hidden;
+  overflow-wrap: normal;
   font-size: 0.78rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+  word-break: normal;
 }
 
 .empty {

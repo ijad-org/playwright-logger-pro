@@ -143,19 +143,39 @@ test.describe('search', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('docs/intro');
     await ready(page);
+    // Glyph widths differ between machines (a bare Linux runner falls back to DejaVu Sans, which is wide), so
+    // use a deliberately wide face: the checks below are about the CSS contract, not about where a font happens to fit.
+    await page.addStyleTag({ content: "[role=dialog], [role=dialog] * { font-family: 'DejaVu Sans', Verdana, sans-serif !important; }" });
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     for (const query of ['redact', 'BrowserLoggerConfig']) {
       await page.getByRole('combobox').fill(query);
+      // The status reads "Searching…" until the results are those of this query; until then the list still shows the previous one.
+      await expect(dialog(page).getByRole('status')).toContainText(/^\d+ results?/);
       await expect(page.getByRole('listbox', { name: 'Search results' }).getByRole('option').first()).toBeVisible();
-      const overflowing = await page.getByRole('option').evaluateAll((rows) =>
-        rows.flatMap((row) =>
-          [...row.querySelectorAll<HTMLElement>('[class*=label], [class*=detail]')]
-            .filter((el) => el.scrollWidth > el.clientWidth + 1 || getComputedStyle(el).overflowWrap === 'anywhere')
-            .map((el) => el.textContent),
-        ),
+      const problems = await page.getByRole('option').evaluateAll((rows) =>
+        rows.flatMap((row) => {
+          if (!row.isConnected) return ['a result row was replaced while it was being measured'];
+          const rowBox = row.getBoundingClientRect();
+          return [...row.querySelectorAll<HTMLElement>('[class*=label], [class*=detail]')].flatMap((el) => {
+            const css = getComputedStyle(el);
+            const box = el.getBoundingClientRect();
+            const name = `${el.className.split(' ')[0].replace(/_\w+$/, '')} "${el.textContent}"`;
+            const found: string[] = [];
+            // Never in the row's way: the box stays inside its row.
+            if (box.left < rowBox.left - 1 || box.right > rowBox.right + 1) found.push(`${name}: pushed out of its row`);
+            if (css.overflowWrap !== 'normal' || css.wordBreak !== 'normal') found.push(`${name}: may break inside a word (overflow-wrap ${css.overflowWrap}, word-break ${css.wordBreak})`);
+            if (el.className.includes('detail')) {
+              // The trail is one line and may be cut, but only with an ellipsis (so it overflows its box by design).
+              if (css.whiteSpace !== 'nowrap' || css.textOverflow !== 'ellipsis' || css.overflow !== 'hidden') found.push(`${name}: not a one-line ellipsis (${css.whiteSpace}, ${css.textOverflow}, ${css.overflow})`);
+            } else if (el.scrollWidth > el.clientWidth + 1) {
+              // A title wraps between words; a word wider than the line would be clipped instead.
+              found.push(`${name}: a word is wider than the line`);
+            }
+            return found;
+          });
+        }),
       );
-      // overflow-wrap is normal and the box is not wider than its row: nothing is broken inside a word.
-      expect(overflowing, query).toEqual([]);
+      expect(problems, query).toEqual([]);
     }
   });
 
