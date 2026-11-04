@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.4.1] - 2026-11-03
+
+No change to the published code or its behaviour.
+
+### Fixed
+
+- The `step and error locations point at the spec file` meta tests (`pnpm test:meta`) failed in a checkout whose folder is named `playwright-logger-pro`: they took the package name anywhere in a stack frame for a frame of the library, and the spec's own path contained it. The logger was not at fault (it finds its own frames by their directory, `src/` or `dist/`, and the error stacks were clean). The test now looks for the package's `src/` and `dist/` directories and for `node_modules/playwright-logger-pro/`, and a unit test checks that a user frame survives in a checkout with that name.
+
+### Changed
+
+- README: the dark and light screenshots are plain Markdown images, so they render on the npm package page.
+- Docs only: what `curl: 'always'` does is now described as it works. Every call gets a curl in the `playwright-logger-pro.json` attachment; the `curl*.sh` scripts are attached only when the test failed or with `details: 'always'`; the compact console prints curls only under failed calls (status >= 400 or a network error), as in 0.4.0. No code change.
+- Docs: the *From 0.3 to 0.4* section of the migration page is rewritten (the note below), and the docs home page no longer says that API logging prints everything live and has no curl.
+- Repository: the unused `npm-publish` GitHub environment is removed. Releases use npm trusted publishing and name no environment.
+
+### Upgrading from 0.3 to 0.4
+
+0.4.0 changed defaults. Nothing needs to change for the code to run, but the output and some logged values differ:
+
+- **Compact is the default output.** An API call prints one line, and a failed request gets a `│` block under it when its test failed. Register the reporter after `list` (`reporter: [['list'], ['playwright-logger-pro/reporter']]`) to get the layout and the total line; without it the fixture prints the lines itself.
+- **Restore the 0.3 output with `apiLog: { format: 'verbose' }`.** That brings back headers, bodies, response, curl and the `#!/bin/sh` `curl.sh`, exactly as in 0.3.
+- **More values are masked by default** (merged with your own lists; `replaceDefaultRedaction: true` drops them; also in `format: 'verbose'`). Added in 0.4.0, on top of the 0.3 lists: headers `proxy-authorization` and `x-auth-token`; query parameters `refresh_token`, `key`, `signature` and `sig`; and JSON/form body keys `password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`, `cardToken`, `cardNumber`, `cvv`, `pin`, `access_token`, `refresh_token`, `api_key` and `card_number` (the default list was empty). A response field called `token` or `password` now shows `***` in the log.
+- **`curl` has a default.** In compact output it is `'5xx'` (it was `false`): a call with status >= 500 or a network error gets a curl, printed under it when its test failed, and a `curl*.sh` script attached to the report. A 4xx gets its `←` block without a curl; use `curl: '4xx+'` for that, or `'never'` to switch curls off. `format: 'verbose'` keeps `false`. `curl` also accepts `'5xx'`, `'4xx+'`, `'always'` and `'never'`; `true`, `false` and `'on-failure'` still work (in compact: `'always'`, `'never'`, `'4xx+'`).
+- **`curl: 'always'`** gives every call a curl in the `playwright-logger-pro.json` attachment. The `curl*.sh` scripts are attached only when the test failed or with `details: 'always'`. The console prints a curl only under failed calls.
+
+See *From 0.3 to 0.4* in the migration page of the docs.
+
 ## [0.4.0] - 2026-10-31
 
 ### Added

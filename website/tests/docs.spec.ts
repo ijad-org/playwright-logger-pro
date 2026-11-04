@@ -13,6 +13,23 @@ test('home page renders', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'npm package' })).toBeVisible();
 });
 
+test.describe('install command', () => {
+  for (const width of [390, 360]) {
+    test(`is fully readable without scrolling at ${width}px and Copy still copies it`, async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('./');
+      const code = page.locator('[class*=install] code');
+      await expect(code).toContainText('npm i -D playwright-logger-pro');
+      expect(await code.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.getByRole('button', { name: 'Copy install command' }).click();
+      await expect(page.getByRole('button', { name: 'Copy install command' })).toHaveText('Copied');
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('npm i -D playwright-logger-pro');
+    });
+  }
+});
+
 test.describe('terminal sample', () => {
   const rgb = (hex: string) => {
     const n = parseInt(hex.slice(1), 16);
@@ -105,6 +122,61 @@ test.describe('search', () => {
     await expect(dialog(page)).toBeHidden();
     await expect(page).not.toHaveURL(/docs\/intro/);
     expect(page.url()).toContain('_highlight=');
+  });
+
+  test('shows content excerpts with the matches highlighted and the page and section under them', async ({ page }) => {
+    await page.goto('docs/intro');
+    await ready(page);
+    await page.keyboard.press('Control+k');
+    await page.getByRole('combobox').fill('redact');
+    const excerpts = page.getByRole('listbox', { name: 'Search results' }).getByRole('option').filter({ has: page.locator('[class*=excerpt]') });
+    await expect(excerpts.first()).toBeVisible();
+    const first = excerpts.first();
+    // A sentence, not just a title, with the query highlighted ...
+    expect((await first.locator('[class*=excerpt]').innerText()).split(/\s+/).length).toBeGreaterThan(8);
+    await expect(first.locator('[class*=excerpt] mark').first()).toContainText(/redact/i);
+    // ... and where it comes from, small, under it.
+    await expect(first.locator('[class*=detail]')).toContainText(/\w/);
+  });
+
+  test('on a phone titles wrap between words and are never cut mid-word or pushed out of the row', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('docs/intro');
+    await ready(page);
+    // Glyph widths differ between machines (a bare Linux runner falls back to DejaVu Sans, which is wide), so
+    // use a deliberately wide face: the checks below are about the CSS contract, not about where a font happens to fit.
+    await page.addStyleTag({ content: "[role=dialog], [role=dialog] * { font-family: 'DejaVu Sans', Verdana, sans-serif !important; }" });
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    for (const query of ['redact', 'BrowserLoggerConfig']) {
+      await page.getByRole('combobox').fill(query);
+      // The status reads "Searching…" until the results are those of this query; until then the list still shows the previous one.
+      await expect(dialog(page).getByRole('status')).toContainText(/^\d+ results?/);
+      await expect(page.getByRole('listbox', { name: 'Search results' }).getByRole('option').first()).toBeVisible();
+      const problems = await page.getByRole('option').evaluateAll((rows) =>
+        rows.flatMap((row) => {
+          if (!row.isConnected) return ['a result row was replaced while it was being measured'];
+          const rowBox = row.getBoundingClientRect();
+          return [...row.querySelectorAll<HTMLElement>('[class*=label], [class*=detail]')].flatMap((el) => {
+            const css = getComputedStyle(el);
+            const box = el.getBoundingClientRect();
+            const name = `${el.className.split(' ')[0].replace(/_\w+$/, '')} "${el.textContent}"`;
+            const found: string[] = [];
+            // Never in the row's way: the box stays inside its row.
+            if (box.left < rowBox.left - 1 || box.right > rowBox.right + 1) found.push(`${name}: pushed out of its row`);
+            if (css.overflowWrap !== 'normal' || css.wordBreak !== 'normal') found.push(`${name}: may break inside a word (overflow-wrap ${css.overflowWrap}, word-break ${css.wordBreak})`);
+            if (el.className.includes('detail')) {
+              // The trail is one line and may be cut, but only with an ellipsis (so it overflows its box by design).
+              if (css.whiteSpace !== 'nowrap' || css.textOverflow !== 'ellipsis' || css.overflow !== 'hidden') found.push(`${name}: not a one-line ellipsis (${css.whiteSpace}, ${css.textOverflow}, ${css.overflow})`);
+            } else if (el.scrollWidth > el.clientWidth + 1) {
+              // A title wraps between words; a word wider than the line would be clipped instead.
+              found.push(`${name}: a word is wider than the line`);
+            }
+            return found;
+          });
+        }),
+      );
+      expect(problems, query).toEqual([]);
+    }
   });
 
   test('Esc closes and returns focus; slash opens when not typing; Tab is trapped', async ({ page }) => {

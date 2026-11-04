@@ -87,10 +87,9 @@
   font-weight: 500;
 }
 
-/* Right side order: search, GitHub, npm, colour toggle. */
+/* Right side order, as on playwright.dev: GitHub, npm, colour toggle, search (the theme renders the search last). */
 .navbar__items--right > [class*='navbarSearchContainer'] {
-  order: -1;
-  margin-right: 0.25rem;
+  margin-left: 0.25rem;
 }
 
 .header-icon-link {

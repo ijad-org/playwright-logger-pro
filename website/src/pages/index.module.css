@@ -88,6 +88,23 @@
   border-color: var(--ifm-color-primary);
 }
 
+/* A phone: the whole command fits next to the Copy button, with no scrolling. The size follows the
+   width (12.9px at 390px) and, when even that is too wide, the command wraps at a space or hyphen. */
+@media (max-width: 576px) {
+  .install {
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+  .install code {
+    font-size: min(0.95rem, 3.3vw);
+    white-space: normal;
+    overflow-x: visible;
+  }
+  .copy {
+    flex: none;
+  }
+}
+
 .heroTerminal {
   min-width: 0;
 }

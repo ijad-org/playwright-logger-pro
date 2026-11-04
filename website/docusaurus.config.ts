@@ -99,7 +99,9 @@ const config: Config = {
         language: 'en',
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
-        searchResultLimits: 12,
+        searchResultLimits: 20,
+        // Characters of the excerpt shown under a match (50 by default); the dialog shows it on up to 3 lines.
+        searchResultContextMaxLength: 150,
         // Our SearchBar wrapper (src/theme/SearchBar) owns Ctrl/Cmd+K and "/".
         searchBarShortcut: false,
         searchBarShortcutHint: false,

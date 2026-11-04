@@ -21,7 +21,7 @@ export default defineConfig({
 });
 ```
 
-The `test` fixture (`playwright-logger-pro/fixtures`) records each call of a test, masked, and attaches `playwright-logger-pro.json` (plus the `curl*.sh` scripts). The reporter reads it when the test ends and prints it. Without the reporter the fixture prints the same lines itself, above the result line, and no total.
+The `test` fixture (`playwright-logger-pro/fixtures`) records each call of a test, masked, and attaches `playwright-logger-pro.json` (plus the `curl*.sh` scripts for a failed test, or with `details: 'always'`). The reporter reads it when the test ends and prints it. Without the reporter the fixture prints the same lines itself, above the result line, and no total.
 
 ## The request line
 
@@ -60,8 +60,8 @@ curl -X POST 'https://api.shop.test/v1/checkout?token='"${TOKEN}"'&currency=EUR'
 
 `export` the variables, then run it. The script has the whole body; the terminal cuts bodies over 2 KB with `…`. A test with several curls gets `curl-{n}-{METHOD}-{lastPathSegment}.sh`. A test that passed gets no script unless `details: 'always'`. Two masked values with the same key name share one variable.
 
-:::note `curl: 'always'` and the console
-With `curl: 'always'` a curl is recorded for every call: it is in the `playwright-logger-pro.json` attachment, and in `curl*.sh` files when the test failed or `details: 'always'`. The console, however, prints a curl only inside the detail block, which exists only for calls with status >= 400 or a network error. A successful call never prints one; open the attachment or the script to get it.
+:::note What `curl: 'always'` means
+Every call gets a curl in the `playwright-logger-pro.json` attachment. Its `curl*.sh` script is attached only when the test failed or with `details: 'always'`. The console still prints a curl only under a failed call, with status >= 400 or a network error, so a successful call keeps its single line. Open the attachment (or, when there is one, the script) to replay a successful call.
 :::
 
 ## Masking
