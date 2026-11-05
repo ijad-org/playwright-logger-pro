@@ -235,6 +235,22 @@ These decide the default for `colors` (both loggers) when you do not set it, in 
 
 `colors: true` or `false` in the options always wins, including over `NO_COLOR`.
 
+:::tip VS Code play button
+The VS Code Playwright extension's play button runs tests without a terminal, so auto-detection gives no colour. Colour it everywhere except on CI:
+
+```ts title="playwright.config.ts"
+use: { apiLog: { colors: !process.env.CI } },
+```
+
+Or on the reporter alone, leaving `apiLog` as it is:
+
+```ts title="playwright.config.ts"
+reporter: [['list'], ['playwright-logger-pro/reporter', { colors: !process.env.CI }]],
+```
+
+On CI that sets `colors: false`, so CI logs stay plain. See [Compact output › Colours](./compact-output.mdx#colours).
+:::
+
 The curl command has [its own, stricter rule](./api-logging.mdx#curl-colours-gate) and reads a few more variables:
 
 | Variable | Effect |
