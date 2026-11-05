@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2] - 2026-11-05
+
+### Added
+
+- **`apiLog.curlOnFailedTest`** (`false` | `true` | `'last'` | `'all'`, default `false`): when a test fails, the curl of the **last API call made before the failure** (`'last'`, the same as `true`) or of every call made before it (`'all'`) is recorded whatever its status, so the request that answered `201` where the test asserted `200` can be replayed. Compact output only. The call gets a `│` block under its line with the response (`← 201 Created  {…}`), the curl and `↳ replay: curl.sh attached to the HTML report`; the script is attached as `curl.sh` (`curl-{n}-…sh` for several). The status chip keeps its success colour and the gutter is neutral. The curl is masked exactly like every other one: `***` on the console and in the `playwright-logger-pro.json` attachment, `${VAR}` placeholders in `curl.sh`. It is independent of `curl` (it works with `curl: 'never'`); `details: 'never'` leaves the block out, `curlFormat.file: false` the file. A call made after the test had already failed (an `afterEach` cleanup, steps after a failed `expect.soft`) is never the last call. A passing test, a test that fails as `test.fail()` expects, and `format: 'verbose'` are unchanged; with the option off (the default) nothing is built or recorded differently. With it on, a curl is built for every call (about 0.1 ms per call against a loopback server) and only the last one is kept. New type `FailedTestCurl`; `CallRecord.curlOnFailedTest`.
+- Docs: a `colors: !process.env.CI` recipe for the VS Code play button, and the equivalent reporter option `['playwright-logger-pro/reporter', { colors: !process.env.CI }]`, in the README and the docs site (*Compact output*, *Troubleshooting*, *CI recipes*, *Configuration*).
+
+### Fixed
+
+- **An explicit `apiLog: { colors: true }` now colours the compact output.** It used to colour only the verbose lines: the reporter detected a terminal by itself (so a piped run, such as the VS Code play button, was plain whatever `apiLog.colors` said), and the compact output the fixture prints without the reporter followed `curlFormat.colors: 'auto'` alone. The fixture now records an explicit `colors` (`true` or `false`) in the `playwright-logger-pro.json` attachment, the reporter follows it, and the fixture's own output follows it too. The reporter's own `colors` option still wins over it (`'auto'`, the default, leaves it to the fixture). `colors: false` keeps the output plain. With `colors` unset nothing changes: no colours on CI, with `NO_COLOR`, or when piped. An explicit `true` is an override and also beats `NO_COLOR` and CI, as it already did for the verbose lines. Without the reporter, a piped runner still shows no colour: Playwright strips the ANSI codes from a worker's output when its own output is not coloured, so register the reporter.
+- Docs and types only: `curl: 'on-failure'` was documented as "any status that is not 2xx". In compact output (the default) it is `'4xx+'`: the console shows curls for status >= 400 and network errors (a 1xx/3xx response also gets its `curl*.sh` when the test failed). Only `format: 'verbose'` uses "any non-2xx". The documentation and the `ApiLoggerConfig.curl` comment now say so. No behaviour change.
+
 ## [0.4.1] - 2026-11-03
 
 No change to the published code or its behaviour.

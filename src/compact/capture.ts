@@ -23,9 +23,13 @@ export function renderOptionsOf(cfg: ResolvedConfig, colors: boolean, width: num
   };
 }
 
-/** The display options that travel with the JSON attachment. */
-export function displayOptionsOf(cfg: ResolvedConfig): Record<string, unknown> {
+/**
+ * The display options that travel with the JSON attachment. `colors` is only there when the user set
+ * one (`explicitColors`): the reporter then follows it instead of detecting a terminal.
+ */
+export function displayOptionsOf(cfg: ResolvedConfig, explicitColors?: boolean): Record<string, unknown> {
   return {
+    ...(explicitColors === undefined ? {} : { colors: explicitColors }),
     slowThresholdMs: cfg.slowThresholdMs,
     timeColumn: cfg.timeColumn,
     details: cfg.details,

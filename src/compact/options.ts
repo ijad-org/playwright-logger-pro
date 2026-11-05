@@ -2,6 +2,11 @@ import { describeValue, warnOnce } from '../warn';
 
 /** What the compact output prints for a call that went wrong; see `ApiLoggerConfig.curl`. */
 export type CurlMode = '5xx' | '4xx+' | 'always' | 'never';
+/**
+ * Which calls of a FAILED test get a curl whatever their status; see `ApiLoggerConfig.curlOnFailedTest`.
+ * `'last'`: the last call made before the failure. `'all'`: every call made before it.
+ */
+export type FailedTestCurl = 'last' | 'all';
 /** When the `│` detail block is printed under a request line. */
 export type DetailsMode = 'failed-tests' | 'always' | 'never';
 /** `'ansi'`: the 16 basic colours of the user's terminal theme. `'dark'`/`'light'`: true colour. */
@@ -41,6 +46,7 @@ export interface ResolvedDisplay {
 }
 
 export const CURL_MODES: readonly CurlMode[] = ['5xx', '4xx+', 'always', 'never'];
+export const FAILED_TEST_CURL_MODES: readonly FailedTestCurl[] = ['last', 'all'];
 export const DETAILS_MODES: readonly DetailsMode[] = ['failed-tests', 'always', 'never'];
 export const THEMES: readonly ThemeName[] = ['ansi', 'dark', 'light'];
 
@@ -108,9 +114,17 @@ export function curlModeOf(curl: unknown): CurlMode | undefined {
   return CURL_MODES.includes(curl as CurlMode) ? curl as CurlMode : undefined;
 }
 
+/** The `curlOnFailedTest` option: `true` is `'last'`; undefined when the value is not one of the accepted ones. */
+export function failedTestCurlOf(value: unknown): FailedTestCurl | false | undefined {
+  if (value === true) return 'last';
+  if (value === false) return false;
+  return FAILED_TEST_CURL_MODES.includes(value as FailedTestCurl) ? value as FailedTestCurl : undefined;
+}
+
 /**
  * Whether a call gets a curl. `status` is undefined for a network failure. `'on-failure'`
- * (legacy) means any non-2xx; `true` means every call.
+ * (legacy) means any non-2xx here (the verbose output uses it as it is); compact output reads it as
+ * `'4xx+'` when it prints (see `curlModeOf`). `true` means every call.
  */
 export function wantsCurl(curl: boolean | 'on-failure' | CurlMode, status: number | undefined): boolean {
   if (curl === true || curl === 'always') return true;

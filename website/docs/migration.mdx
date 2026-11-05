@@ -15,7 +15,8 @@ description: Moving from playwright-colorful-logger to playwright-logger-pro, an
 - `playwright-logger-pro@0.3.0`: adds coloured curl output and `curl.sh` per test.
 - `playwright-logger-pro@0.3.1`: metadata and docs only (keywords, description, npm links). No changes needed.
 - `playwright-logger-pro@0.4.0`: compact output and a reporter, new defaults. See [From 0.3 to 0.4](#from-03-to-04).
-- `playwright-logger-pro@0.4.1` (this documentation): a fix to the repository's own tests, the README and the upgrade notes. No behaviour changes.
+- `playwright-logger-pro@0.4.1`: a fix to the repository's own tests, the README and the upgrade notes. No behaviour changes.
+- `playwright-logger-pro@0.4.2` (this documentation): adds `curlOnFailedTest`, and an explicit `apiLog.colors` now also colours the reporter. See [From 0.4.1 to 0.4.2](#from-041-to-042).
 :::
 
 ## Why the rename
@@ -97,6 +98,13 @@ The first rows change what you see in logs. Review them before merging the migra
 | Invalid options | Undefined behaviour. | A one-time `[playwright-logger-pro]` warning and the default. | None |
 | Binary and control characters | Binary responses were decoded as text; escape sequences in bodies reached the terminal. | Binary responses are summarised as `<binary N bytes (type)>`; control characters are escaped. | None |
 
+## From 0.4.1 to 0.4.2 {#from-041-to-042}
+
+Nothing needs to change. Two things differ:
+
+- **New option `curlOnFailedTest`** (default `false`, so no change unless you set it): `'last'` records the curl of the last call made before a test failed, whatever its status, and `'all'` of every call. See [Compact output](./compact-output.mdx#curl-on-failed-test).
+- **An explicit `apiLog: { colors: true }` now colours the compact output**, the reporter's included, even when it is piped. Before, the reporter detected a terminal by itself and ignored it. `colors: false` keeps the output plain, and with `colors` unset nothing changes. If you set `colors: true` project-wide to colour the verbose lines, the compact output is now coloured in CI logs too (with the reporter registered); use `colors: !process.env.CI` to keep CI plain.
+
 ## From 0.3 to 0.4 {#from-03-to-04}
 
 :::warning The default output changed
@@ -142,7 +150,7 @@ To get a curl for 4xx as well, set `apiLog: { curl: '4xx+' }`; to turn it off, `
 | New options | `format`, `slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`, `mask`. See [Configuration](./configuration.mdx#apilog-options). |
 | New entry point | `playwright-logger-pro/reporter`. |
 | JSON attachment | Tests with API calls get a `playwright-logger-pro.json` attachment (masked records), which the reporter reads. |
-| Colour | Compact output follows the rules of `curlFormat.colors: 'auto'` (none on CI, with `NO_COLOR` or when piped); `FORCE_COLOR` alone does not colour it. |
+| Colour | Compact output follows the rules of `curlFormat.colors: 'auto'` (none on CI, with `NO_COLOR` or when piped); `FORCE_COLOR` alone does not colour it. An explicit `apiLog.colors` (0.4.2) or reporter `colors` decides. |
 
 ## From 0.1 to 0.2
 

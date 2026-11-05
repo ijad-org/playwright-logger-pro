@@ -18,8 +18,10 @@ export interface ReporterOptions extends CompactDisplayConfig {
    */
   curl?: CurlMode;
   /**
-   * ANSI colours. `'auto'` (default): the rules of the `curlFormat.colors: 'auto'` option, so
-   * none on CI, with `NO_COLOR`, or when stdout is not a terminal. `true` forces them on.
+   * ANSI colours. `true` forces them on, `false` off. `'auto'` (default): the `colors` the test's
+   * `apiLog` sets explicitly, if it does (`colors: true` colours this output although it is piped
+   * or on CI, `colors: false` keeps it plain); otherwise the rules of `curlFormat.colors: 'auto'`,
+   * so none on CI, with `NO_COLOR`, or when stdout is not a terminal.
    */
   colors?: boolean | 'auto';
 }
@@ -69,7 +71,10 @@ function terminalWidth(): number {
  */
 export default class ApiLogReporter implements Reporter {
   private readonly input: Record<string, unknown>;
-  private readonly colors: boolean;
+  /** The `colors` option when it is a boolean: it wins over the fixture's `apiLog.colors`. */
+  private readonly forcedColors: boolean | undefined;
+  private readonly detectedColors: boolean;
+  private colors: boolean;
   private display: ResolvedDisplay;
   private curl: CurlMode = '5xx';
   private running = 0;
@@ -84,7 +89,9 @@ export default class ApiLogReporter implements Reporter {
     const input = options !== null && typeof options === 'object' ? options : {};
     this.input = input as Record<string, unknown>;
     const colors = this.input.colors;
-    this.colors = typeof colors === 'boolean' ? colors : detectColorSupport() && autoCurlColors();
+    this.forcedColors = typeof colors === 'boolean' ? colors : undefined;
+    this.detectedColors = detectColorSupport() && autoCurlColors();
+    this.colors = this.forcedColors ?? this.detectedColors;
     this.display = resolveDisplay(this.input);
     this.curl = curlModeOf(this.input.curl) ?? '5xx';
     // The fixtures in the workers learn from this that the reporter prints, so they do not.
@@ -110,6 +117,8 @@ export default class ApiLogReporter implements Reporter {
     if (attachment && attachment.calls.length > 0) {
       const display = resolveDisplay(this.input, resolveDisplay(attachment.options ?? {}, undefined, quiet));
       this.display = display;
+      const fixtureColors = attachment.options?.colors;
+      this.colors = this.forcedColors ?? (typeof fixtureColors === 'boolean' ? fixtureColors : this.detectedColors);
       this.curl = curlModeOf(this.input.curl) ?? curlModeOf(attachment.options?.curl) ?? '5xx';
       const opts = this.renderOptions();
       const failed = result.status !== 'skipped' && result.status !== test.expectedStatus;

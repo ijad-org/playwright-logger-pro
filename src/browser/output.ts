@@ -20,6 +20,8 @@ export interface TestInfoLike {
   line?: number;
   retry?: number;
   repeatEachIndex?: number;
+  /** Errors of the test so far (assertion failures included); it has failed once there is one. */
+  errors?: readonly unknown[];
   testId?: string;
   outputPath(...segments: string[]): string;
   attach(name: string, options: { body?: string | Buffer; contentType?: string; path?: string }): Promise<void>;

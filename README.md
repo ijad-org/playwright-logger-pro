@@ -136,6 +136,25 @@ An API call prints one line: `METHOD STATUS  URL  TIMING`. The host is dimmed, m
 
 A request with status >= 400, or no response, gets a `│` block directly under its line **when its test failed** (`details: 'failed-tests'`, the default). A 404 in a passing negative test keeps its chip and gets no block. The block starts with `← 404 Not Found  {…}`, the response body as one line (JSON minified, text its first line, cut at `bodyPreviewChars` with `…`, `<empty body>`, or `<binary 12.4 KB application/pdf>`); a network error shows `← ECONNREFUSED  connect ECONNREFUSED 127.0.0.1:9`. With `curl: '5xx'` (the default) a 5xx or network error also shows its curl and `↳ replay: curl.sh attached to the HTML report`.
 
+**The call that answered 2xx but was not what the test expected.** The `curl` modes look at the status, so a `201` where the test asserted `200` has no curl. Set `curlOnFailedTest: 'last'` and, when a test fails, the **last call made before the failure** gets a block even though it succeeded, and its `curl.sh` is attached. The status chip keeps the success colour; the block is neutral:
+
+```
+    POST    201   https://api.shop.test/v1/orders                         88ms
+    │ ← 201 Created  {"id":7,"status":"pending"}
+    │
+    │ curl -X POST 'https://api.shop.test/v1/orders' \
+    │   -H 'Authorization: ***' \
+    │   --data-raw '{"item":"book"}'
+    │
+    │ ↳ replay: curl.sh attached to the HTML report
+```
+
+```ts
+use: { apiLog: { curlOnFailedTest: 'last' } }   // false (default) | 'last' (= true) | 'all'
+```
+
+`'all'` does this for every call made before the failure. Calls made after the first failure (an `afterEach` cleanup, steps after a failed `expect.soft`) are never "the last call". The curl is masked like every other one (`***` on the console, `${VAR}` placeholders in `curl.sh`); `details: 'never'` leaves the block out and `curlFormat.file: false` the file. It is independent of `curl` (it works with `curl: 'never'`), applies to compact output only and does nothing for a passing test. Cost: with it on, a curl is built for every call (about 0.1 ms on a loopback server) and only the last one is kept.
+
 ### Reporter
 
 ```ts
@@ -153,7 +172,7 @@ The `test` fixture records every call of a test (masked) in a `playwright-logger
 | `theme` | `'ansi'` | `'ansi'` (the 16 basic colours of your terminal theme, readable on dark and light), `'dark'` or `'light'` (true colour, the palette of the screenshots). |
 | `ascii` | `false` | ASCII symbols (`\|` `<-` `^` `->` `ok` `x`). Automatic on legacy Windows consoles (no `WT_SESSION`). |
 | `curl` | from `apiLog.curl` | `'5xx'`, `'4xx+'`, `'always'`, `'never'`: which calls get a curl. The console prints a curl only under a failed call (status >= 400 or a network error); with `'always'` successful calls get theirs in the JSON attachment (and in `curl*.sh` when the test failed or with `details: 'always'`), not on the console. |
-| `colors` | `'auto'` | `true` forces colours; see [Colours](#compact-colours-ci-and-ascii). |
+| `colors` | `'auto'` | `true` forces colours on, `false` off. `'auto'`: the explicit `colors` of the test's `apiLog` if it has one, else the terminal rules; see [Colours](#compact-colours-ci-and-ascii). |
 
 The same display options (`slowThresholdMs`, `timeColumn`, `details`, `bodyPreviewChars`, `theme`, `ascii`) work in `apiLog`; the fixture hands them to the reporter in the JSON attachment, and the reporter's own options win.
 
@@ -189,7 +208,27 @@ The mask is always exactly `***`, never the length of the value, and it is the s
 
 ### Compact colours, CI and ASCII
 
-The compact output follows the colour rules of [`curlFormat.colors: 'auto'`](#when-the-curl-is-coloured): colours only in a real terminal, never on CI, with `NO_COLOR`, `FORCE_COLOR=0` or `TERM=dumb`; `FORCE_COLOR` alone does not colour CI logs or piped output. `colors: true` on the reporter (or `curlFormat.colors: true` for the fixture) forces them. Without colours the status column is 5 wide so a failure still stands out: ` 200 ` and `[404]`. `▲`, `│` and `***` stay as they are.
+The compact output follows the colour rules of [`curlFormat.colors: 'auto'`](#when-the-curl-is-coloured): colours only in a real terminal, never on CI, with `NO_COLOR`, `FORCE_COLOR=0` or `TERM=dumb`; `FORCE_COLOR` alone does not colour CI logs or piped output. To force them:
+
+- **`colors: true` in the fixture's `apiLog`.** The fixture records it in the test's JSON attachment, so the reporter colours its output too (and the fixture, what it prints without the reporter). `colors: false` keeps it plain. Nothing set: unchanged, the reporter detects a terminal itself.
+- **`colors: true` / `false` on the reporter.** It wins over `apiLog.colors`; `'auto'` (the default) leaves it to the fixture.
+- `curlFormat.colors: true` still forces the colours of what the fixture prints without the reporter.
+
+An explicit `true` is an override, as everywhere in this package: it also beats `NO_COLOR` and CI. Register the reporter for it to work when the output is piped: the reporter writes from the runner process, whereas Playwright strips the ANSI codes from what a worker prints whenever its own output is not coloured (see the note under [Colors](#colors)).
+
+**VS Code play button and other panels that capture the output.** The output is not a terminal, so the compact output is plain. Colour it everywhere except on CI:
+
+```ts
+use: { apiLog: { colors: !process.env.CI } }
+```
+
+Or on the reporter alone, leaving `apiLog` as it is:
+
+```ts
+reporter: [['list'], ['playwright-logger-pro/reporter', { colors: !process.env.CI }]],
+```
+
+Without colours the status column is 5 wide so a failure still stands out: ` 200 ` and `[404]`. `▲`, `│` and `***` stay as they are.
 
 ### Ordering with the list reporter
 
@@ -343,6 +382,20 @@ When it is off nothing is installed or listened to for that test.
 use: { apiLog: { curl: 'on-failure' } }
 ```
 
+**Replay the 2xx that the test did not expect** (a `201` where it asserted `200`): the last call before a failure gets its curl and a `curl.sh`, whatever its status:
+
+```ts
+use: { apiLog: { curlOnFailedTest: 'last' } }
+```
+
+**Colours in the VS Code play button** (output that is captured, not a terminal), none on CI:
+
+```ts
+use: { apiLog: { colors: !process.env.CI } }
+// or only on the reporter:
+reporter: [['list'], ['playwright-logger-pro/reporter', { colors: !process.env.CI }]],
+```
+
 **Force colors in CI logs** (for example with a custom `sink`, or when `NO_COLOR` is set). Locally `undefined` keeps auto-detection:
 
 ```ts
@@ -408,9 +461,10 @@ A redacted curl sends `***` in place of the secret, so fill the real value back 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | `false` makes the wrapper a no-op pass-through. |
-| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR` for the log lines; the curl follows [its own rule](#when-the-curl-is-coloured)). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
+| `colors` | `boolean` | auto | `true`/`false` force ANSI colors on/off (`true` wins over `NO_COLOR` for the log lines; the curl follows [its own rule](#when-the-curl-is-coloured)). In compact output an explicit value also decides the colours of the reporter (it reads it from the JSON attachment; the reporter's own `colors` wins). Auto: see [Colors](#colors); with a custom `sink` auto means off. |
 | `format` | `'compact' \| 'verbose'` | `'compact'` | One line per call and detail where it failed ([Compact output](#compact-output)), or the 0.3 output ([Verbose format](#verbose-format-the-03-output)). |
-| `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` (`false` with `format: 'verbose'`) | Which calls get a curl: `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'` (= `true`; every call gets a curl in the `playwright-logger-pro.json` attachment; its `curl*.sh` script is attached only for a failed test or with `details: 'always'`; in compact output the console prints curls only under failed calls, status >= 400 or a network error), `'never'` (= `false`); legacy `'on-failure'` is any non-2xx. |
+| `curl` | `boolean \| 'on-failure' \| '5xx' \| '4xx+' \| 'always' \| 'never'` | `'5xx'` (`false` with `format: 'verbose'`) | Which calls get a curl: `'5xx'` status >= 500 and network errors, `'4xx+'` status >= 400 and network errors, `'always'` (= `true`; every call gets a curl in the `playwright-logger-pro.json` attachment; its `curl*.sh` script is attached only for a failed test or with `details: 'always'`; in compact output the console prints curls only under failed calls, status >= 400 or a network error), `'never'` (= `false`); legacy `'on-failure'` is `'4xx+'` in compact output (the console shows curls for status >= 400 and network errors; a 1xx/3xx response also gets its `curl*.sh` when the test failed) and any non-2xx with `format: 'verbose'`. To also get the curl of a successful call whose test failed, see `curlOnFailedTest`. |
+| `curlOnFailedTest` | `false \| true \| 'last' \| 'all'` | `false` | Compact output. When a test fails, the curl (and a `curl.sh`) of the **last call made before the failure** (`'last'`, same as `true`) or of every call made before it (`'all'`), whatever its status, with the response in a neutral `│` block. Masked like every curl; independent of `curl`; needs `curlFormat.file` for the script. Calls made after the first failure are ignored. |
 | `slowThresholdMs` | `number` | `1000` | A call at least this slow gets `▲` and counts in the total. |
 | `timeColumn` | `number \| 'auto'` | `82` | Column where the timing ends. |
 | `details` | `'failed-tests' \| 'always' \| 'never'` | `'failed-tests'` | When a failed request gets its `│` block. |
@@ -454,7 +508,7 @@ use: { apiLog: { colors: true } }
 Some things to know about the output:
 
 - **Errors.** When a request fails without a response (timeout, connection refused, …), the wrapper logs a `✖ GET <url> failed (Nms) <error>` line. If `curl` is `true` or `'on-failure'`, the curl follows it. The error is then rethrown unchanged.
-- **Cookies in the curl.** Cookies from the context's cookie jar that match the URL are added to the curl as a `Cookie` header, which is redacted by default. The jar is read before the request is sent, so a cookie set by the response itself is never added. (This reads `storageState()` once per request when `curl` is on.)
+- **Cookies in the curl.** Cookies from the context's cookie jar that match the URL are added to the curl as a `Cookie` header, which is redacted by default. The jar is read before the request is sent, so a cookie set by the response itself is never added. (This reads `storageState()` once per request when `curl` or `curlOnFailedTest` is on.)
 - **Repeated response headers** (such as several `Set-Cookie`) are printed as one indented `name: value` line per value.
 - **Binary request bodies** (a `Buffer` as `data`) are logged as `<Buffer N bytes>`.
 - **Binary responses.** Responses with a non-text content type are logged as `<binary N bytes (type)>`. Control characters in text bodies (such as terminal escape sequences) are escaped, for example `\x1b`.

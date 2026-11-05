@@ -26,6 +26,11 @@ export interface CallRecord {
   responseBody?: BodyRecord;
   /** The curl command as printed in the terminal: masked with `***`, long bodies cut with `…`. */
   curl?: string;
+  /**
+   * The test failed and `curlOnFailedTest` selected this call: `curl` is printed in its block
+   * whatever the call's status or the `curl` option says.
+   */
+  curlOnFailedTest?: true;
   /** Name of the attached script that replays the call (placeholders for the masked values). */
   curlFile?: string;
 }

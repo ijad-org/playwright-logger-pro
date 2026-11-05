@@ -15,6 +15,7 @@ The printed **curl** is stricter: plain in CI, under `NO_COLOR` and `TERM=dumb`,
 `colors: true` only controls what the logger writes. On Playwright 1.64 (checked on 1.64.1), when the reporter's own output is piped (not a TTY), the reporter strips every ANSI code from the test stdout it forwards, so the console shows no colours even with `colors: true`. The sink files keep them: lines sent to a `sink` (a file, an attachment) arrive with the colours intact. Run in a terminal, or use a `sink`.
 :::
 
+- **No colours in the VS Code play button** (or any panel that captures the output): the reporter detects a terminal, and there is none. Set `apiLog: { colors: !process.env.CI }`, or on the reporter `['playwright-logger-pro/reporter', { colors: !process.env.CI }]`. See [Compact output › Colours](./compact-output.mdx#colours).
 - **No colours in CI**: your runner may not set `FORCE_COLOR` for workers, or `NO_COLOR` is set. Force them: `apiLog: { colors: true }` and `browserLog: { colors: true }`. `colors: true` wins over `NO_COLOR`.
 - **Escape codes like `[32m` in a log viewer**: the viewer does not render ANSI. Set `NO_COLOR=1` or `colors: false` (Jenkins: enable the AnsiColor plugin instead).
 - **Colours in a file**: output sent through your own `sink` follows `colors`. Set `colors: false` for files. Browser-log attachments and files are always plain.

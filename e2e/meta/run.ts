@@ -48,7 +48,7 @@ function portIsFree(port: number): boolean {
  * and per-run offset; the probe skips a port something else already listens on, which would make
  * Playwright's web server fail and the run end with exit 1, no output and no results.
  */
-function freshPort(run: number): number {
+export function freshPort(run: number): number {
   let port = 20000 + ((process.pid * 7 + run * 131) % 20000);
   while (!portIsFree(port)) port = 20000 + ((port - 20000 + 1) % 20000);
   return port;

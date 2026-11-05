@@ -1,9 +1,9 @@
 import { autoCurlColors, isOff } from './env';
 import { describeValue, warnOnce } from './warn';
-import { curlModeOf, legacyConsole, resolveDisplay, DEFAULT_DISPLAY } from './compact/options';
-import type { CompactDisplayConfig, CurlMode, OutputFormat, ResolvedDisplay } from './compact/options';
+import { curlModeOf, failedTestCurlOf, legacyConsole, resolveDisplay, DEFAULT_DISPLAY } from './compact/options';
+import type { CompactDisplayConfig, CurlMode, FailedTestCurl, OutputFormat, ResolvedDisplay } from './compact/options';
 
-export type { CompactDisplayConfig, CurlMode, DetailsMode, OutputFormat, ThemeName } from './compact/options';
+export type { CompactDisplayConfig, CurlMode, DetailsMode, FailedTestCurl, OutputFormat, ThemeName } from './compact/options';
 
 /** Extra names to mask, merged with the built-in lists. */
 export interface MaskConfig {
@@ -28,8 +28,9 @@ export interface CurlFormatConfig {
    *   TTY, or the test runner's own stdout is one, which the runner tells its workers through
    *   PLP_RUNNER_TTY, or PLAYWRIGHT_FORCE_TTY is set), TERM is not dumb, the resolved `colors` is
    *   true and the sink is the default console one. So a local `npx playwright test` in a
-   *   terminal needs no setting. `colors: true` alone, FORCE_COLOR and the FORCE_COLOR=1 that
-   *   Playwright gives its workers do not colour the curl in CI or when piped.
+   *   terminal needs no setting. With `format: 'verbose'`, `colors: true` alone, FORCE_COLOR and the
+   *   FORCE_COLOR=1 that Playwright gives its workers do not colour the curl in CI or when piped
+   *   (in compact output an explicit `colors: true` colours the whole output, the curl included).
    *   The 256-colour palette is used when COLORTERM/TERM/the terminal say so, else the 16 basic colours.
    * - true: colours on. An explicit override: it bypasses the CI, NO_COLOR and terminal checks
    *   and the sink check, so ANSI codes can end up in CI logs or a custom sink.
@@ -73,6 +74,12 @@ export interface ApiLoggerConfig extends CompactDisplayConfig {
    * DEBUG_COLORS, PLAYWRIGHT_FORCE_TTY and whether stdout/stderr is a TTY;
    * see detectColorSupport(). With a custom `sink` and no explicit `colors`, colours
    * default to off so ANSI codes do not end up in a file; set `colors: true` to keep them.
+   *
+   * In compact output an explicit value also decides the colours of the `playwright-logger-pro/reporter`
+   * (it reads it from the test's `playwright-logger-pro.json` attachment): `colors: true` colours its
+   * output although it is piped or on CI, `colors: false` keeps it plain. The reporter's own
+   * `colors` option wins over it. Without an explicit value the reporter detects a terminal itself
+   * (none on CI, with NO_COLOR or when piped), whatever `colors` auto-detects here.
    */
   colors?: boolean;
   /**
@@ -84,10 +91,31 @@ export interface ApiLoggerConfig extends CompactDisplayConfig {
    *   test or with `details: 'always'`, and the console prints curls only under failed calls
    *   (status >= 400 or a network error)
    * - 'never' (same as false; the default with `format: 'verbose'`)
-   * - 'on-failure' (legacy): any status that is not 2xx, and network errors
+   * - 'on-failure' (legacy): in compact output the same as '4xx+' for the console (status >= 400 and
+   *   network errors; a 1xx/3xx response also gets its `curl*.sh` when the test failed); with
+   *   `format: 'verbose'` any status that is not 2xx, and network errors
    * Any other value is ignored with a console warning.
+   *
+   * These modes look at the status of a call. To also get the curl of a call that succeeded but
+   * whose test failed anyway, see `curlOnFailedTest`.
    */
   curl?: boolean | 'on-failure' | CurlMode;
+  /**
+   * Compact output only. When a test FAILS, also record the curl of calls whatever their status, so
+   * the request that returned a 2xx the test did not expect can be replayed. The curl gets the same
+   * masking as every other one (`***` in the console, `${VAR}` placeholders in `curl.sh`).
+   * - false (default): only the calls that `curl` selects.
+   * - 'last' (same as true): the last call made before the test failed. Calls made after the first
+   *   failure (an `afterEach` cleanup, steps after an `expect.soft`) are not considered.
+   * - 'all': every call made before the failure.
+   *
+   * A selected call is printed with a `│` block under its line (its status chip keeps the success
+   * colour) holding the response, the curl and the `curl.sh` replay note, and `curl.sh` is attached
+   * to the report; `details: 'never'` leaves the block out and `curlFormat.file: false` the file.
+   * Independent of `curl`: it works with `curl: 'never'` too. A passing test (or one expected to
+   * fail) is not affected. Any other value is ignored with a console warning.
+   */
+  curlOnFailedTest?: boolean | FailedTestCurl;
   /**
    * Presentation of the curl command: colours, single-line output and the `curl.sh` file.
    * Only the printed command changes; the redaction is the same everywhere. An invalid
@@ -147,10 +175,10 @@ export interface ApiLoggerConfig extends CompactDisplayConfig {
 
 type OptionalKeys = 'baseURL' | 'extraHTTPHeaders';
 export type ResolvedConfig =
-  Required<Omit<ApiLoggerConfig, OptionalKeys | 'curlFormat' | 'mask' | keyof CompactDisplayConfig>> &
+  Required<Omit<ApiLoggerConfig, OptionalKeys | 'curlFormat' | 'curlOnFailedTest' | 'mask' | keyof CompactDisplayConfig>> &
   Pick<ApiLoggerConfig, OptionalKeys> &
   ResolvedDisplay &
-  { curlFormat: ResolvedCurlFormat };
+  { curlFormat: ResolvedCurlFormat; curlOnFailedTest: FailedTestCurl | false };
 
 type ColorEnv = Record<string, string | undefined>;
 interface MaybeTTY { isTTY?: boolean }
@@ -203,6 +231,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   enabled: true,
   colors: detectColorSupport(),
   curl: '5xx',
+  curlOnFailedTest: false,
   format: 'compact',
   ...DEFAULT_DISPLAY,
   ascii: legacyConsole(),
@@ -234,7 +263,7 @@ const KNOWN_CURL_FORMAT_OPTIONS = new Set(['colors', 'multiline', 'file']);
 
 const KNOWN_OPTIONS = new Set([
   'format', 'slowThresholdMs', 'timeColumn', 'details', 'bodyPreviewChars', 'theme', 'ascii', 'mask',
-  'enabled', 'colors', 'curl', 'curlFormat', 'logHeaders', 'logBody', 'maxBodyLength', 'redactHeaders',
+  'enabled', 'colors', 'curl', 'curlOnFailedTest', 'curlFormat', 'logHeaders', 'logBody', 'maxBodyLength', 'redactHeaders',
   'redactQueryParams', 'redactBodyKeys', 'replaceDefaultRedaction', 'sink', 'baseURL',
   'extraHTTPHeaders',
 ]);
@@ -366,6 +395,14 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
     }
   }
 
+  let curlOnFailedTest: ResolvedConfig['curlOnFailedTest'] = DEFAULT_CONFIG.curlOnFailedTest;
+  const rawFailed = get('curlOnFailedTest');
+  if (rawFailed !== undefined) {
+    const mode = failedTestCurlOf(rawFailed);
+    if (mode !== undefined) curlOnFailedTest = mode;
+    else invalid('curlOnFailedTest', "false, true, 'last' or 'all'", rawFailed, 'false');
+  }
+
   let sink = DEFAULT_CONFIG.sink;
   let customSink = false;
   const rawSink = get('sink');
@@ -416,6 +453,7 @@ export function resolveConfig(config: ApiLoggerConfig = {}): ResolvedConfig {
     enabled: bool('enabled', DEFAULT_CONFIG.enabled),
     colors,
     curl,
+    curlOnFailedTest,
     curlFormat,
     logHeaders: bool('logHeaders', DEFAULT_CONFIG.logHeaders),
     logBody: bool('logBody', DEFAULT_CONFIG.logBody),

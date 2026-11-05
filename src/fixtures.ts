@@ -5,7 +5,7 @@ import { writeCurlScript } from './curlFile';
 import { wrapRequestContext } from './wrapRequestContext';
 import type { CompactCall } from './wrapRequestContext';
 import { renderOptionsOf } from './compact/capture';
-import { finishCompact, reporterActive } from './compact/finish';
+import { CallCollector, finishCompact, reporterActive } from './compact/finish';
 import { renderCallLine } from './compact/render';
 import { BrowserLogSession, NOOP_HANDLE } from './browser/session';
 import type { BrowserLogHandle } from './browser/session';
@@ -116,9 +116,9 @@ export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtur
     const printsHere = !compact || !reporter || customSink;
     const config = _plpSession && printsHere ? _plpSession.teeApiLog(resolved) : resolved;
     const curls: string[] = [];
-    const calls: CompactCall[] = [];
+    const collector = new CallCollector(resolved.curlOnFailedTest, testInfo);
     const onCall = (call: CompactCall) => {
-      calls.push(call);
+      collector.add(call);
       if (_plpSession && !printsHere) {
         try {
           _plpSession.addApi(renderCallLine(call.record, renderOptionsOf(resolved, false, 120)));
@@ -129,7 +129,8 @@ export const test = wrapTestType(base.extend<LoggerOptions & BrowserLoggerFixtur
     };
     await use(wrapRequestContext(request, config, { onCurl: (plain) => curls.push(plain), onCall }));
     if (compact) {
-      await finishCompact(calls, testInfo, { cfg: resolveConfig(config), customSink, reporter });
+      const colors = typeof apiLog.colors === 'boolean' ? apiLog.colors : undefined;
+      await finishCompact(collector.calls, testInfo, { cfg: resolveConfig(config), customSink, reporter, colors });
     } else {
       await writeCurlScript(curls, testInfo, { log: config.sink });
     }
