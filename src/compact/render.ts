@@ -190,24 +190,29 @@ function replayLine(call: CallRecord, style: Style, sym: Symbols): string {
   return style.gray(`${sym.replay} replay: `) + style.strong(call.curlFile as string) + style.gray(' attached to the HTML report');
 }
 
-/** The `│` block that explains a failed call, one string per line. */
+/**
+ * The `│` block under a call: the response and, where due, the curl. A failed call (4xx, 5xx, no
+ * response) gets one in the colour of its severity. A call that succeeded gets one only when
+ * `curlOnFailedTest` selected it, in neutral colours: its status chip stays what it is.
+ */
 export function renderDetail(call: CallRecord, opts: RenderOptions, style: Style = makeStyle(opts.colors, opts.theme)): string[] {
   const severity = severityOf(call);
-  if (!severity) return [];
+  if (!severity && !(call.curlOnFailedTest && call.curl)) return [];
   const sym = symbolsFor(opts.ascii);
-  const bar = style.gutter(severity)(sym.gutter);
+  const bar = (severity ? style.gutter(severity) : style.gray)(sym.gutter);
   const lead = `${INDENT}${bar} `;
   const lines: string[] = [];
 
+  const paintStatus = severity ? style.severityText(severity) : style.status(call.status as number);
   const headline = call.error ?
-    style.severityText(severity)(escapeControlChars(call.error.code)) :
-    style.severityText(severity)(escapeControlChars(`${call.status} ${call.statusText ?? ''}`.trim()));
+    style.severityText(severity ?? 5)(escapeControlChars(call.error.code)) :
+    paintStatus(escapeControlChars(`${call.status} ${call.statusText ?? ''}`.trim()));
   const detail = call.error ?
     paintMasks(escapeControlChars(call.error.message), style.body, style) :
     paintMasks(bodyPreview(call.responseBody, opts.bodyPreviewChars), style.body, style);
   lines.push(`${lead}${style.gray(sym.arrow)} ${headline}${detail ? `  ${detail}` : ''}`);
 
-  if (call.curl && wantsCurl(opts.curl, call.status)) {
+  if (call.curl && (call.curlOnFailedTest || wantsCurl(opts.curl, call.status))) {
     lines.push(`${INDENT}${bar}`);
     for (const row of call.curl.split('\n')) lines.push(`${lead}${paintCurlLine(row, style)}`);
     if (call.curlFile) {
@@ -220,7 +225,9 @@ export function renderDetail(call: CallRecord, opts: RenderOptions, style: Style
 
 /** Whether the detail block of `call` is printed. */
 export function showsDetail(call: CallRecord, opts: Pick<RenderOptions, 'details'>, testFailed: boolean): boolean {
-  if (!isErrorCall(call) || opts.details === 'never') return false;
+  if (opts.details === 'never') return false;
+  // A call that succeeded only has a block when the failed test asked for its curl.
+  if (!isErrorCall(call)) return testFailed && call.curlOnFailedTest === true && call.curl !== undefined;
   return opts.details === 'always' || testFailed;
 }
 

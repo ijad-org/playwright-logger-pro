@@ -16,7 +16,7 @@ import { runDemo } from './demo-output.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(here, '..', 'docs', 'assets');
 
-const THEMES = {
+export const THEMES = {
   dark: {
     page: '#0a0c10', window: '#0d1117', bar: '#161b22', fg: '#e6edf3', title: '#7d8590', shadow: 'rgba(0,0,0,.5)',
     // the 16 basic colours as the theme maps them: SGR 30-37 and 90-97
@@ -81,7 +81,7 @@ export function ansiToHtml(text, theme) {
   return html;
 }
 
-function page(theme, body) {
+export function page(theme, body) {
   const t = THEMES[theme];
   return `<!doctype html><meta charset="utf-8"><style>
     body { margin: 0; padding: 44px; background: ${t.page}; width: max-content; }

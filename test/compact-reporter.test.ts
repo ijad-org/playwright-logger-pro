@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { FullConfig, TestCase, TestResult } from '@playwright/test/reporter';
+import { CI_VARIABLES } from '../src/env';
 import { REPORTER_VAR } from '../src/compact/finish';
 import { ATTACHMENT_NAME } from '../src/compact/types';
 import type { CallRecord, CallsAttachment } from '../src/compact/types';
 import Reporter from '../src/reporter';
 import type { ReporterOptions } from '../src/reporter';
 
+const strip = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, '');
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 let written: string[];
@@ -208,5 +210,82 @@ describe('the reporter in a terminal', () => {
     await r.onEnd();
     const lines = out().trimEnd().split('\n');
     assert.equal(lines.at(-1), '  1 request · 1 error · 1 slow ≥1s');
+  });
+});
+
+describe('colours: the reporter follows the fixture\'s explicit apiLog.colors', () => {
+  const ANSI = /\u001b\[/;
+  const VARS = ['NO_COLOR', 'FORCE_COLOR', 'DEBUG_COLORS', 'PLP_RUNNER_TTY', 'TERM', 'PLAYWRIGHT_FORCE_TTY'];
+  let saved: Record<string, string | undefined>;
+  const inEnv = (env: Record<string, string | undefined>) => {
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  beforeEach(() => {
+    saved = Object.fromEntries([...VARS, ...CI_VARIABLES].map((n) => [n, process.env[n]]));
+    inEnv(Object.fromEntries([...VARS, ...CI_VARIABLES].map((n) => [n, undefined])));
+    process.env.PLAYWRIGHT_FORCE_TTY = '0';
+  });
+  afterEach(() => inEnv(saved));
+
+  /** A reporter with only `options` (so `colors` is not forced), one test with `fixtureOptions` in its attachment. */
+  async function printed(options: ReporterOptions, fixtureOptions?: Record<string, unknown>, status = 'passed'): Promise<string> {
+    const r = spy(new Reporter(options));
+    r.onBegin({ reporter: [['list'], ['x']] } as unknown as FullConfig);
+    r.onTestBegin();
+    r.onTestEnd(testCase('t'), result([call('/a', 404)], status, fixtureOptions));
+    await tick();
+    return out();
+  }
+
+  test('nothing says colours: plain (unchanged)', async () => {
+    assert.doesNotMatch(await printed({}), ANSI);
+    assert.doesNotMatch(await printed({}, {}), ANSI);
+  });
+
+  test('apiLog colors: true colours it although it is piped', async () => {
+    assert.match(await printed({}, { colors: true }), ANSI);
+  });
+
+  test('apiLog colors: false keeps it plain even where colours are detected', async () => {
+    inEnv({ PLAYWRIGHT_FORCE_TTY: '1' });
+    assert.match(await printed({}), ANSI, 'detected');
+    written.length = 0;
+    assert.doesNotMatch(await printed({}, { colors: false }), ANSI);
+  });
+
+  test("the reporter's own colors option wins over the fixture's", async () => {
+    assert.doesNotMatch(await printed({ colors: false }, { colors: true }), ANSI);
+    written.length = 0;
+    assert.match(await printed({ colors: true }, { colors: false }), ANSI);
+    written.length = 0;
+    assert.match(await printed({ colors: 'auto' }, { colors: true }), ANSI, "'auto' leaves it to the fixture");
+  });
+
+  test('NO_COLOR and CI keep the detection off, as before; an explicit true still overrides them', async () => {
+    inEnv({ NO_COLOR: '1', PLAYWRIGHT_FORCE_TTY: '1' });
+    assert.doesNotMatch(await printed({}), ANSI);
+    written.length = 0;
+    assert.doesNotMatch(await printed({}, { colors: false }), ANSI);
+    written.length = 0;
+    assert.match(await printed({}, { colors: true }), ANSI, 'colors: true is an explicit override, as documented');
+    inEnv({ NO_COLOR: undefined, CI: 'true' });
+    written.length = 0;
+    assert.doesNotMatch(await printed({}), ANSI);
+  });
+
+  test('the block of a selected 2xx call is coloured too, and the title line', async () => {
+    const record = call('/a', 201, 30, { curl: "curl 'https://api.test/a'", curlOnFailedTest: true });
+    const r = spy(new Reporter({}));
+    r.onBegin({ reporter: [['dot']] } as unknown as FullConfig);
+    r.onTestBegin();
+    r.onTestEnd(testCase('t', 'passed'), result([record], 'failed', { colors: true }));
+    await tick();
+    const lines = out().split('\n');
+    assert.match(lines[0] ?? '', ANSI, 'title line');
+    assert.ok(lines.some((l) => l.includes('curl') && ANSI.test(l)), out());
+    assert.ok(lines.some((l) => strip(l) === "    │ curl 'https://api.test/a'"), out());
   });
 });

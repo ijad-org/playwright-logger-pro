@@ -41,6 +41,32 @@ A request with status >= 400, or no response, gets a `│` block when its test f
 - First line: `← 404 Not Found  {"error":"order not found"}`, the body as one line (JSON minified, text its first line), cut at `bodyPreviewChars` with `…`. A network error shows `← ECONNREFUSED  connect ECONNREFUSED 127.0.0.1:9`.
 - With `curl: '5xx'` (the default: 5xx and network errors) it adds the curl command and `↳ replay: curl.sh attached to the HTML report`.
 
+## The call that succeeded but whose test failed {#curl-on-failed-test}
+
+The `curl` modes look at the status, so a `201` where the test asserted `200` gets no block and no curl. With `curlOnFailedTest` the **last call made before the failure** gets one, whatever its status:
+
+```ts title="playwright.config.ts"
+use: { apiLog: { curlOnFailedTest: 'last' } }   // false (default) | 'last' (= true) | 'all'
+```
+
+```text
+    POST    201   https://api.shop.test/v1/orders                         88ms
+    │ ← 201 Created  {"id":7,"status":"pending"}
+    │
+    │ curl -X POST 'https://api.shop.test/v1/orders' \
+    │   -H 'Authorization: ***' \
+    │   --data-raw '{"item":"book"}'
+    │
+    │ ↳ replay: curl.sh attached to the HTML report
+```
+
+- The status chip keeps the success colour and the gutter is neutral: the call did succeed, the test did not.
+- `'all'` does the same for every call made before the failure; the scripts are numbered (`curl-1-GET-ok.sh`, …).
+- Calls made after the first failure (an `afterEach` cleanup, steps after a failed `expect.soft`) are never "the last call".
+- The curl is masked like every other one: `***` on the console, `${VAR}` placeholders in `curl.sh`. `details: 'never'` leaves the block out and `curlFormat.file: false` the file.
+- It is independent of `curl` (it works with `curl: 'never'`), only for compact output, and does nothing for a passing test or one that is expected to fail.
+- Cost: a curl is built for every call (about 0.1 ms on a loopback server, nothing next to a real request) and only the last one is kept.
+
 ## The curl.sh replay script
 
 The attachment never holds a secret. Every masked value becomes an environment variable named after its key:
@@ -71,8 +97,26 @@ The mask is always `***`, never the length of the value. The built-in lists are 
 ## Colours, CI and ASCII {#colours}
 
 - The default `theme: 'ansi'` uses bold plus the 16 basic colours, so it reads on dark and light terminals. `'dark'` and `'light'` are true-colour palettes.
-- Colours follow the rules of [`curlFormat.colors: 'auto'`](./configuration.mdx#curlformat): none on CI, with `NO_COLOR`, `FORCE_COLOR=0` or `TERM=dumb`, or when the output is not a terminal. `FORCE_COLOR` alone does not colour CI logs. `colors: true` (reporter) or `curlFormat.colors: true` (fixture) forces them.
+- Colours follow the rules of [`curlFormat.colors: 'auto'`](./configuration.mdx#curlformat): none on CI, with `NO_COLOR`, `FORCE_COLOR=0` or `TERM=dumb`, or when the output is not a terminal. `FORCE_COLOR` alone does not colour CI logs.
+- To force them: `colors: true` in the fixture's `apiLog` (the fixture records it in the JSON attachment, so the reporter colours its output too), `colors: true` on the reporter, or `curlFormat.colors: true` for what the fixture prints without the reporter. `colors: false` keeps the output plain. The reporter's own `colors` wins over `apiLog.colors`; `'auto'` (the default) leaves it to the fixture. Nothing set: unchanged.
+- An explicit `true` is an override, as everywhere in this package: it also beats `NO_COLOR` and CI. Register the reporter for it to work when the output is piped: the reporter writes from the runner process, whereas Playwright strips the ANSI codes from what a worker prints when its own output is not coloured.
 - Without colours the status column is 5 wide so chips still stand out: ` 200 ` and `[404]`.
+
+:::tip VS Code play button
+The play button (and other panels that capture the output) is not a terminal, so the compact output is plain. Colour it everywhere except on CI:
+
+```ts title="playwright.config.ts"
+use: { apiLog: { colors: !process.env.CI } },
+```
+
+Or on the reporter alone, leaving `apiLog` as it is:
+
+```ts title="playwright.config.ts"
+reporter: [['list'], ['playwright-logger-pro/reporter', { colors: !process.env.CI }]],
+```
+
+On CI that sets `colors: false`, so CI logs stay plain.
+:::
 - `ascii: true` (automatic on legacy Windows consoles) swaps `│ ← ▲ ↳` for `| <- ^ ->`.
 
 ## The list reporter and terminals {#ordering}

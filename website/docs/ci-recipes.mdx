@@ -94,7 +94,7 @@ withEnv(['NO_COLOR=1']) {
 }
 ```
 
-`NO_COLOR` set to a non-empty value turns colours off for both loggers. `colors: true` in the options still wins.
+`NO_COLOR` set to a non-empty value turns colours off for both loggers. `colors: true` in the options still wins. For the compact output and its reporter, `colors: true` in `apiLog` is enough; in the VS Code play button use `colors: !process.env.CI` (see [Compact output](./compact-output.mdx#colours)).
 
 ## Docker
 

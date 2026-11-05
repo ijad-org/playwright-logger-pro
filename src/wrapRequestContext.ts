@@ -16,6 +16,7 @@ import {
 } from './format';
 import { captureBody, describeError, maskHeaders, renderOptionsOf } from './compact/capture';
 import { buildCurlParts } from './compact/curlScript';
+import type { CurlParts } from './compact/curlScript';
 import { wantsCurl } from './compact/options';
 import { renderCalls } from './compact/render';
 import { isErrorCall } from './compact/types';
@@ -128,6 +129,11 @@ function isHttpMethod(prop: string | symbol): prop is HttpMethod {
 export interface CompactCall {
   record: CallRecord;
   script?: string;
+  /**
+   * The curl of the call whatever its status, built when `curlOnFailedTest` is on. The fixture keeps
+   * it for the call(s) it may need and drops it from the others (see `CallCollector`).
+   */
+  curlParts?: CurlParts;
 }
 
 /** Hooks for the `test` fixture; not part of the public API. */
@@ -162,6 +168,10 @@ export function wrapRequestContext(
   const log = cfg.sink;
   const verbose = cfg.format === 'verbose';
   const curlOff = cfg.curl === false || cfg.curl === 'never';
+  // Only a test can fail, so this needs the fixture's onCall (and compact output).
+  const keepParts = cfg.curlOnFailedTest !== false && !verbose && internals.onCall !== undefined;
+  // The cookie jar is read before each request for a curl that may be needed afterwards.
+  const curlPossible = !curlOff || keepParts;
 
   async function loggedCall(
       method: HttpMethod,
@@ -195,7 +205,7 @@ export function wrapRequestContext(
     // Cookies the context sends implicitly, for the curl. Always read before
     // the request: afterwards the jar also holds the cookies the response set,
     // which the request never sent.
-    const cookiesBefore = !curlOff ? await readCookies(context) : undefined;
+    const cookiesBefore = curlPossible ? await readCookies(context) : undefined;
     const requestInfo = (
         requestedUrl: string,
         followRedirects: boolean,
@@ -267,7 +277,9 @@ export function wrapRequestContext(
           }
         }
         let script: string | undefined;
-        if (!curlOff && (isErrorCall(record) || wantsCurl(cfg.curl, record.status))) {
+        let curlParts: CurlParts | undefined;
+        const statusCurl = !curlOff && (isErrorCall(record) || wantsCurl(cfg.curl, record.status));
+        if (statusCurl || keepParts) {
           const chain = followRedirects && response ? await readRedirectChain(response) : undefined;
           const parts = buildCurlParts(requestInfo(requestedUrl, followRedirects, chain), {
             redactHeaders: cfg.redactHeaders,
@@ -275,15 +287,18 @@ export function wrapRequestContext(
             redactBodyKeys: cfg.redactBodyKeys,
             multiline: cfg.curlFormat.multiline,
           });
-          record.curl = parts.terminal;
-          if (wantsCurl(cfg.curl, record.status) && cfg.curlFormat.file) script = parts.script;
+          if (statusCurl) {
+            record.curl = parts.terminal;
+            if (wantsCurl(cfg.curl, record.status) && cfg.curlFormat.file) script = parts.script;
+          }
+          if (keepParts) curlParts = parts;
         }
         if (internals.onCall) {
-          internals.onCall({ record, script });
+          internals.onCall({ record, script, curlParts });
         } else {
           // No test to ask whether it failed: show the detail of every failed call.
           const width = process.stdout.columns || 120;
-          log(renderCalls([record], renderOptionsOf(cfg, cfg.curlFormat.colors, width), true).join('\n'));
+          log(renderCalls([record], renderOptionsOf(cfg, cfg.curlFormat.colors || config?.colors === true, width), true).join('\n'));
         }
       } catch (error) {
         warnOnce(`could not record an API call: ${error instanceof Error ? error.message : String(error)}`);

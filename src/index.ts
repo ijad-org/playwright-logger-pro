@@ -38,6 +38,7 @@ export type {
   CompactDisplayConfig,
   CurlMode,
   DetailsMode,
+  FailedTestCurl,
   MaskConfig,
   OutputFormat,
   ThemeName,

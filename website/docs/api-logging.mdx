@@ -209,7 +209,7 @@ With `colors: 'auto'` (the default) the curl is coloured only when **all** of th
 3. The output really reaches a terminal: `process.stdout` is a TTY, or the test runner's own stdout is one ([see below](#curl-colours-local)), or `PLAYWRIGHT_FORCE_TTY` is set (anything but `0`/`false`); and `TERM` is not `dumb`.
 4. The resolved [`colors`](./configuration.mdx#environment-variables) is true and the sink is the default console sink. A custom `sink` keeps the curl plain.
 
-`FORCE_COLOR` does not count: `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe. A top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines.
+`FORCE_COLOR` does not count: `playwright test` sets `FORCE_COLOR=1` for its workers, but their stdout is a pipe. In verbose output a top-level `colors: true` alone does not colour the curl in CI or when the output is piped; it still colours the other log lines. In compact output it colours the whole output, the curl block included ([Compact output](./compact-output.mdx#colours)).
 
 #### Local runs in a terminal need no setting {#curl-colours-local}
 
